@@ -30,6 +30,44 @@ const EMPLOYERS = [
   ['true', 'agency only'],
 ]
 
+function pageWindow(current, total) {
+  const pages = new Set([1, total, current, current - 1, current + 1])
+  return [...pages].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b)
+}
+
+function Pager({ page, totalPages, onGo }) {
+  if (totalPages <= 1) return null
+  const pages = pageWindow(page, totalPages)
+  let prev = 0
+  return (
+    <div className="filters" style={{ justifyContent: 'center' }}>
+      <button className="btn sm" disabled={page <= 1} onClick={() => onGo(page - 1)}>
+        Previous
+      </button>
+      {pages.map((n) => {
+        const gap = n - prev > 1
+        prev = n
+        return (
+          <span key={n} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {gap && <span className="muted">...</span>}
+            <button
+              className={'btn sm' + (n === page ? ' pri' : '')}
+              onClick={() => onGo(n)}
+              disabled={n === page}
+            >
+              {n}
+            </button>
+          </span>
+        )
+      })}
+      <button className="btn sm" disabled={page >= totalPages} onClick={() => onGo(page + 1)}>
+        Next
+      </button>
+      <span className="muted">page {page} of {totalPages}</span>
+    </div>
+  )
+}
+
 export default function Jobs() {
   const [params, setParams] = useSearchParams()
   const [data, setData] = useState(null)
@@ -40,6 +78,8 @@ export default function Jobs() {
   const [selected, setSelected] = useState(() => new Set())
   const [rating, setRating] = useState(null)
 
+  const PAGE_SIZE = 25
+
   const gate = params.get('gate') ?? 'passed'
   const hours = params.get('hours') ?? '48'
   const country = params.get('country') ?? ''
@@ -47,6 +87,7 @@ export default function Jobs() {
   const remote = params.get('remote') ?? ''
   const agency = params.get('agency') ?? ''
   const source = params.get('source') ?? ''
+  const page = Math.max(1, parseInt(params.get('page'), 10) || 1)
 
   const onlySaved = gate === 'saved'
 
@@ -66,19 +107,27 @@ export default function Jobs() {
         remote,
         agency,
         source,
-        limit: 100,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
       })
       .then(setData)
       .catch(setError)
   }
 
-  useEffect(() => { load() }, [gate, hours, country, minFit, remote, agency, source])
-  useEffect(() => { setSelected(new Set()) }, [gate, hours, country, minFit, remote, agency, source])
+  useEffect(() => { load() }, [gate, hours, country, minFit, remote, agency, source, page])
+  useEffect(() => { setSelected(new Set()) }, [gate, hours, country, minFit, remote, agency, source, page])
 
   const set = (key, value) => {
     const next = new URLSearchParams(params)
-    if (value === '') next.delete(key)
-    else next.set(key, value)
+    next.set(key, value)
+    next.delete('page')
+    setParams(next)
+  }
+
+  const goToPage = (n) => {
+    const next = new URLSearchParams(params)
+    if (n <= 1) next.delete('page')
+    else next.set('page', String(n))
     setParams(next)
   }
 
@@ -157,11 +206,10 @@ export default function Jobs() {
         </div>
         {data && (
           <span className="countpill">
-            {data.total} job{data.total === 1 ? '' : 's'}
-            {!onlySaved && gate === 'passed' && typeof data.total_passed === 'number'
-              && data.total_passed !== data.total
-              ? ' of ' + data.total_passed
-              : ''}
+            {data.total === 0
+              ? '0 jobs'
+              : 'showing ' + (data.offset + 1) + '-' + (data.offset + data.jobs.length) +
+                ' of ' + data.total}
           </span>
         )}
       </div>
@@ -358,6 +406,14 @@ export default function Jobs() {
             </div>
           )
         })
+      )}
+
+      {data && data.total > 0 && (
+        <Pager
+          page={page}
+          totalPages={Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+          onGo={goToPage}
+        />
       )}
 
       <Toast

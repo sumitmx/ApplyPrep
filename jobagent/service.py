@@ -290,7 +290,8 @@ def jobs(conn, gate=None, country=None, min_fit=None, status=None,
 
     rows = conn.execute(
         "SELECT " + JOB_FIELDS + " FROM job" + LATEST_SCORE + clause +
-        " ORDER BY score.fit DESC, job.posted_at DESC LIMIT ? OFFSET ?",
+        " ORDER BY " + EFFECTIVE_REACH + " DESC, score.fit DESC, job.posted_at DESC"
+        " LIMIT ? OFFSET ?",
         args + [limit, offset],
     ).fetchall()
     names = _source_names(conn)
