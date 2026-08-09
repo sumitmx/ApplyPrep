@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+jobs.db
+jobs.db*
+documents/
+config.local.yaml
+session.log
+node_modules/
+dist/

@@ -1,0 +1,76 @@
+companies:
+  - {name: Adyen, ats: greenhouse, token: adyen}
+  - {name: Algolia, ats: greenhouse, token: algolia}
+  - {name: Bird, ats: greenhouse, token: bird}
+  - {name: Cabify, ats: greenhouse, token: cabify}
+  - {name: Celonis, ats: greenhouse, token: celonis}
+  - {name: Cleo, ats: greenhouse, token: cleo}
+  - {name: Contentful, ats: greenhouse, token: contentful}
+  - {name: Databricks, ats: greenhouse, token: databricks}
+  - {name: Datadog, ats: greenhouse, token: datadog}
+  - {name: Dataiku, ats: greenhouse, token: dataiku}
+  - {name: Doctolib, ats: greenhouse, token: doctolib}
+  - {name: Elastic, ats: greenhouse, token: elastic}
+  - {name: Flix, ats: greenhouse, token: flix}
+  - {name: GetYourGuide, ats: greenhouse, token: getyourguide}
+  - {name: GitLab, ats: greenhouse, token: gitlab}
+  - {name: GoCardless, ats: greenhouse, token: gocardless}
+  - {name: Graphcore, ats: greenhouse, token: graphcore}
+  - {name: Grover, ats: greenhouse, token: grover}
+  - {name: Helsing, ats: greenhouse, token: helsing}
+  - {name: Isar Aerospace, ats: greenhouse, token: isarAerospace}
+  - {name: KONUX, ats: greenhouse, token: konux}
+  - {name: Mirakl, ats: greenhouse, token: mirakl}
+  - {name: Monzo, ats: greenhouse, token: monzo}
+  - {name: N26, ats: greenhouse, token: n26}
+  - {name: Neo4j, ats: greenhouse, token: neo4j}
+  - {name: PandaDoc, ats: greenhouse, token: pandadoc}
+  - {name: Parloa, ats: greenhouse, token: parloa}
+  - {name: Raisin, ats: greenhouse, token: raisin}
+  - {name: Remote, ats: greenhouse, token: remote}
+  - {name: Solaris, ats: greenhouse, token: solarisbank}
+  - {name: SumUp, ats: greenhouse, token: sumup}
+  - {name: Trade Republic, ats: greenhouse, token: traderepublic}
+  - {name: Truecaller, ats: greenhouse, token: truecaller}
+  - {name: Typeform, ats: greenhouse, token: typeform}
+  - {name: Urban Sports Club, ats: greenhouse, token: urbansportsclub}
+
+  - {name: Agicap, ats: lever, token: agicap}
+  - {name: Aircall, ats: lever, token: aircall}
+  - {name: Contentsquare, ats: lever, token: contentsquare}
+  - {name: FINN, ats: lever, token: finn}
+  - {name: Jobandtalent, ats: lever, token: jobandtalent}
+  - {name: Pigment, ats: lever, token: pigment}
+  - {name: SonarSource, ats: lever, token: sonarsource}
+  - {name: Spotify, ats: lever, token: spotify}
+  - {name: Swile, ats: lever, token: swile}
+  - {name: Younited, ats: lever, token: younited}
+
+  - {name: Alan, ats: ashby, token: alan}
+  - {name: Ankorstore, ats: ashby, token: ankorstore}
+  - {name: Babbel, ats: ashby, token: babbel}
+  - {name: Beamery, ats: ashby, token: beamery}
+  - {name: Billie, ats: ashby, token: billie}
+  - {name: Camunda, ats: ashby, token: camunda}
+  - {name: Choco, ats: ashby, token: choco}
+  - {name: CLARK, ats: ashby, token: clark}
+  - {name: Deliveroo, ats: ashby, token: deliveroo}
+  - {name: Enpal, ats: ashby, token: enpal}
+  - {name: Forto, ats: ashby, token: forto}
+  - {name: HiveMQ, ats: ashby, token: hivemq}
+  - {name: hyperexponential, ats: ashby, token: hyperexponential}
+  - {name: Improbable, ats: ashby, token: improbable}
+  - {name: Langdock, ats: ashby, token: langdock}
+  - {name: Ledger, ats: ashby, token: ledger}
+  - {name: Lightspeed, ats: ashby, token: lightspeed}
+  - {name: Miro, ats: ashby, token: miro}
+  - {name: Mollie, ats: ashby, token: mollie}
+  - {name: Moss, ats: ashby, token: moss}
+  - {name: Multiverse, ats: ashby, token: multiverse}
+  - {name: Pleo, ats: ashby, token: pleo}
+  - {name: Qonto, ats: ashby, token: qonto}
+  - {name: Quantexa, ats: ashby, token: quantexa}
+  - {name: Trustly, ats: ashby, token: trustly}
+  - {name: Zego, ats: ashby, token: zego}
+
+  - {name: Usercentrics, ats: workable, token: usercentrics}

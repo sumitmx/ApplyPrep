@@ -1,0 +1,989 @@
+import json
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from . import dedup as dedup_module
+from . import documents as documents_module
+from . import profile, rating, store
+from .documents import render
+
+MARK_ACTIONS = {
+    "shortlist": "shortlisted",
+    "hide": "hidden",
+    "reject": "rejected",
+    "reset": "new",
+}
+
+FUNNEL = ("drafting", "applied", "screening", "interview", "offer", "rejected")
+
+RESPONDED = ("screening", "interview", "offer", "rejected")
+
+LATEST_SCORE = (
+    " LEFT JOIN (SELECT job_id, MAX(scored_at) AS scored_at FROM score GROUP BY job_id)"
+    " newest ON newest.job_id = job.id"
+    " LEFT JOIN score ON score.job_id = job.id AND score.scored_at = newest.scored_at"
+    " LEFT JOIN job_reach ON job_reach.job_id = job.id"
+)
+
+EFFECTIVE_REACH = "COALESCE(job_reach.reach, score.reach)"
+
+JOB_FIELDS = (
+    "job.id, job.title, job.company_name, job.country, job.city, job.remote,"
+    " job.employment_type, job.posted_at, job.url, job.description,"
+    " job.salary_min, job.salary_max, job.salary_currency, job.sponsorship_status,"
+    " job.language_required, job.via_agency, job.gate_status, job.gate_reason,"
+    " job.status, job.first_seen_at, job.last_seen_at, job.source_ids,"
+    " score.fit, score.reach, score.ats_score, score.offer_probability,"
+    " score.dimensions, score.rationale, score.model, score.scored_at,"
+    " score.estimate_note,"
+    " job_reach.reach AS computed_reach, job_reach.base AS reach_base,"
+    " job_reach.factor AS reach_factor"
+)
+
+def _source_names(conn):
+    return {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM source")}
+
+
+def websites_for(source_ids_json, names):
+    ids = _json(source_ids_json) or []
+    return [names[i] for i in ids if i in names]
+
+
+def now():
+    return datetime.now(timezone.utc)
+
+
+def _parse(stamp):
+    if not stamp:
+        return None
+    try:
+        dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
+def age_hours(stamp):
+    dt = _parse(stamp)
+    if dt is None:
+        return None
+    return (now() - dt).total_seconds() / 3600.0
+
+
+def relative_age(stamp):
+    hours = age_hours(stamp)
+    if hours is None:
+        return None
+    if hours < 1:
+        return "just now"
+    if hours < 24:
+        count = int(hours)
+        return str(count) + (" hour ago" if count == 1 else " hours ago")
+    days = int(hours // 24)
+    if days < 30:
+        return str(days) + (" day ago" if days == 1 else " days ago")
+    months = days // 30
+    return str(months) + (" month ago" if months == 1 else " months ago")
+
+
+def badges(row):
+    out = []
+    sponsorship = row.get("sponsorship_status")
+    if sponsorship == "confirmed":
+        out.append({"text": "sponsors visas", "tone": "pine"})
+    elif sponsorship == "denied":
+        out.append({"text": "no visa sponsorship", "tone": "rust"})
+    else:
+        out.append({"text": "visa not mentioned", "tone": "amber"})
+    if row.get("language_required") == "de":
+        out.append({"text": "German needed", "tone": "amber"})
+    else:
+        out.append({"text": "English is enough", "tone": "slate"})
+    if row.get("via_agency"):
+        out.append({"text": "posted by an agency", "tone": "rust"})
+    else:
+        out.append({"text": "posted by the company", "tone": "slate"})
+    if row.get("remote") == "remote":
+        out.append({"text": "remote", "tone": "slate"})
+    hours = age_hours(row.get("posted_at"))
+    if hours is not None and hours > 24 * 30:
+        out.append({"text": str(int(hours // 24)) + " days old", "tone": "rust"})
+    return out
+
+
+BANDS = [
+    {"key": "strong", "label": "Best bets", "tone": "pine",
+     "blurb": "Suit you well and realistically reachable"},
+    {"key": "medium", "label": "Worth considering", "tone": "mint",
+     "blurb": "A decent fit, or reachable but not an obvious match"},
+    {"key": "low", "label": "Long shots", "tone": "rust",
+     "blurb": "Weak on merit, on reachability, or both"},
+    {"key": "unrated", "label": "Not rated yet", "tone": "amber",
+     "blurb": "Ask Claude to rate these and they move into a band"},
+]
+
+DEFAULT_BANDS = {
+    "strong_match": 70,
+    "strong_chance": 50,
+    "medium_match": 45,
+    "medium_chance": 45,
+}
+
+
+def band_limits(cfg=None):
+    return dict(DEFAULT_BANDS, **((cfg or {}).get("bands") or {}))
+
+
+def band_for(fit, reach, limits=None):
+    limits = limits or DEFAULT_BANDS
+    if fit is None:
+        return "unrated"
+    chance = reach if reach is not None else 0
+    if fit >= limits["strong_match"] and chance >= limits["strong_chance"]:
+        return "strong"
+    if fit >= limits["medium_match"] or chance >= limits["medium_chance"]:
+        return "medium"
+    return "low"
+
+
+_HEADING_MAX = 80
+
+_REQUIREMENTS_START = re.compile(
+    r"requirements?\b|\brequired\b|qualifications?|who you are\b|about you\b|"
+    r"your profile\b|what you.{0,4}(ll bring|bring|need)|what we.{0,4}re looking for|"
+    r"you (have|bring)\b|must haves?\b|technical (requirements?|skills)|skills?\b|"
+    r"nice to have|preferred qualification",
+    re.I,
+)
+
+_REQUIREMENTS_STOP = re.compile(
+    r"responsibilit|what you.{0,4}ll do|about (the|us|our)\b|who we are\b|\bthe role\b|"
+    r"your (team|day one|impact)\b|benefit|perk|compensation|salary range|"
+    r"equal opportunit|how to apply|why (join|choose|us)\b|our (mission|values|culture)|"
+    r"diversit|apply now|next steps|company overview|what we offer|life at |"
+    r"interview process|hiring process",
+    re.I,
+)
+
+
+def _is_heading_line(line):
+    text = line.strip()
+    if not text or len(text) > _HEADING_MAX or text.startswith("-"):
+        return False
+    return text[-1] not in ".!?,;"
+
+
+def requirements_section(description):
+    lines = str(description or "").split("\n")
+    start = None
+    for i, line in enumerate(lines):
+        if _is_heading_line(line) and _REQUIREMENTS_START.search(line.strip()):
+            start = i
+            break
+    if start is None:
+        return None
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if _is_heading_line(lines[i]) and _REQUIREMENTS_STOP.search(lines[i].strip()):
+            end = i
+            break
+    kept = [line for line in lines[start:end] if line.strip() != "-"]
+    section = "\n".join(kept).strip()
+    return section or None
+
+
+def shape_job(row, limits=None, source_names=None):
+    data = dict(row)
+    scored = data.get("scored_at") is not None
+    requirements = requirements_section(data.get("description"))
+    job = {
+        "id": data["id"],
+        "title": data.get("title"),
+        "company": data.get("company_name"),
+        "country": data.get("country"),
+        "city": data.get("city"),
+        "remote": data.get("remote"),
+        "employment_type": data.get("employment_type"),
+        "posted_at": data.get("posted_at"),
+        "posted_age": relative_age(data.get("posted_at")),
+        "url": data.get("url"),
+        "websites": websites_for(data.get("source_ids"), source_names or {}),
+        "sponsorship": data.get("sponsorship_status"),
+        "language": data.get("language_required"),
+        "via_agency": bool(data.get("via_agency")),
+        "gate_status": data.get("gate_status"),
+        "gate_reason": data.get("gate_reason"),
+        "status": data.get("status"),
+        "saved": data.get("status") == "shortlisted",
+        "requirements": requirements or (data.get("description") or "").strip() or None,
+        "requirements_found": requirements is not None,
+        "badges": badges(data),
+        "scored": scored,
+        "salary": {
+            "min": data.get("salary_min"),
+            "max": data.get("salary_max"),
+            "currency": data.get("salary_currency"),
+        },
+    }
+    computed = data.get("computed_reach")
+    reach = computed if computed is not None else data.get("reach")
+    job["scores"] = {
+        "fit": data.get("fit"),
+        "reach": reach,
+        "reach_source": "computed" if computed is not None else (
+            "model" if data.get("reach") is not None else None
+        ),
+        "reach_base": data.get("reach_base"),
+        "reach_factor": data.get("reach_factor"),
+        "ats_score": data.get("ats_score"),
+        "offer_probability": data.get("offer_probability"),
+        "model": data.get("model"),
+        "scored_at": data.get("scored_at"),
+        "note": data.get("estimate_note"),
+        "estimated": ["ats_score", "offer_probability"],
+    }
+    job["band"] = band_for(data.get("fit"), reach, limits)
+    return job
+
+
+def jobs(conn, gate=None, country=None, min_fit=None, status=None,
+         hours=None, remote=None, agency=None, source=None,
+         limit=50, offset=0, limits=None):
+    where = []
+    args = []
+    if gate:
+        where.append("job.gate_status = ?")
+        args.append(gate)
+    if country:
+        where.append("job.country = ?")
+        args.append(country)
+    if remote:
+        where.append("job.remote = ?")
+        args.append(remote)
+    if agency is not None:
+        where.append("job.via_agency = ?")
+        args.append(1 if agency else 0)
+    if status:
+        where.append("job.status = ?")
+        args.append(status)
+    else:
+        where.append("job.status NOT IN ('hidden', 'rejected')")
+    if min_fit is not None:
+        where.append("score.fit >= ?")
+        args.append(min_fit)
+    if hours is not None:
+        cutoff = (now() - timedelta(hours=hours)).isoformat(timespec="seconds")
+        where.append("job.first_seen_at >= ?")
+        args.append(cutoff)
+    if source:
+        where.append(
+            "job.id IN (SELECT jj.id FROM job AS jj, json_each(jj.source_ids) je"
+            " WHERE je.value = (SELECT id FROM source WHERE name = ?))"
+        )
+        args.append(source)
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+
+    total = conn.execute(
+        "SELECT COUNT(*) AS n FROM job" + LATEST_SCORE + clause, args
+    ).fetchone()["n"]
+
+    rows = conn.execute(
+        "SELECT " + JOB_FIELDS + " FROM job" + LATEST_SCORE + clause +
+        " ORDER BY score.fit DESC, job.posted_at DESC LIMIT ? OFFSET ?",
+        args + [limit, offset],
+    ).fetchall()
+    names = _source_names(conn)
+    shaped = [shape_job(r, limits, names) for r in rows]
+    counts = {}
+    for job in shaped:
+        counts[job["band"]] = counts.get(job["band"], 0) + 1
+    total_passed = conn.execute(
+        "SELECT COUNT(*) AS n FROM job WHERE gate_status = 'passed'"
+        " AND status NOT IN ('hidden', 'rejected')"
+    ).fetchone()["n"]
+    return {"total": total, "total_passed": total_passed, "limit": limit,
+            "offset": offset, "jobs": shaped, "bands": BANDS, "band_counts": counts}
+
+
+def job_detail(conn, job_id, master=None):
+    row = conn.execute(
+        "SELECT " + JOB_FIELDS + " FROM job" + LATEST_SCORE + " WHERE job.id = ?",
+        (job_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    job = shape_job(row, source_names=_source_names(conn))
+    job["description"] = row["description"]
+    job["dimensions"] = _json(row["dimensions"])
+    job["rationale"] = row["rationale"]
+    job["skill_match"] = profile.match_skills(master, row["description"]) if master else None
+    job["documents"] = documents(conn, job_id)
+    stored = store.get_reach(conn, job_id)
+    job["reach_facts"] = _json(stored["facts"]) if stored else None
+    app_row = conn.execute(
+        "SELECT id, status, applied_at FROM application WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    job["application"] = dict(app_row) if app_row else None
+    return job
+
+
+def _json(raw):
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def neighbours(conn, job_id, gate="passed"):
+    ids = [r["id"] for r in conn.execute(
+        "SELECT job.id FROM job" + LATEST_SCORE +
+        " WHERE job.gate_status = ? ORDER BY score.fit DESC, job.posted_at DESC",
+        (gate,),
+    ).fetchall()]
+    if job_id not in ids:
+        return {"previous": None, "next": None}
+    i = ids.index(job_id)
+    return {
+        "previous": ids[i - 1] if i > 0 else None,
+        "next": ids[i + 1] if i < len(ids) - 1 else None,
+    }
+
+
+def mark_job(conn, job_id, action, reason=None):
+    if action not in MARK_ACTIONS:
+        raise ValueError("unknown action " + str(action))
+    new_status = MARK_ACTIONS[action]
+    cur = conn.execute(
+        "UPDATE job SET status = ? WHERE id = ?", (new_status, job_id)
+    )
+    if reason:
+        conn.execute(
+            "UPDATE job SET gate_reason = ? WHERE id = ?", (reason, job_id)
+        )
+    conn.commit()
+    if cur.rowcount == 0:
+        return None
+    return {"id": job_id, "status": new_status, "reason": reason}
+
+
+def pending_jobs(conn, limit=50):
+    rows = conn.execute(
+        "SELECT " + JOB_FIELDS + " FROM job" + LATEST_SCORE +
+        " WHERE job.gate_status = 'passed' AND job.status NOT IN ('hidden', 'rejected')"
+        " AND score.fit IS NULL"
+        " ORDER BY CASE job.sponsorship_status"
+        "   WHEN 'confirmed' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,"
+        " " + EFFECTIVE_REACH + " DESC,"
+        " job.via_agency, job.posted_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [shape_job(r) for r in rows]
+
+
+def pending_count(conn):
+    return conn.execute(
+        "SELECT COUNT(*) AS n FROM job WHERE gate_status = 'passed'"
+        " AND status NOT IN ('hidden', 'rejected')"
+        " AND id NOT IN (SELECT job_id FROM score)"
+    ).fetchone()["n"]
+
+
+def job_brief(conn, job_id, master=None, description_chars=4000):
+    job = job_detail(conn, job_id, master)
+    if job is None:
+        return None
+    text = job.get("description") or ""
+    job["description"] = text[:description_chars]
+    job["description_truncated"] = len(text) > description_chars
+    return job
+
+
+def save_score(conn, job_id, fit, reach=None, dimensions=None, rationale=None,
+               ats_score=None, offer_probability=None, model=None,
+               estimate_note=None, profile_version="v1", rubric_version="v1"):
+    exists = conn.execute("SELECT 1 FROM job WHERE id = ?", (job_id,)).fetchone()
+    if not exists:
+        return None
+    if reach is None:
+        stored = store.get_reach(conn, job_id)
+        reach = stored["reach"] if stored else 0
+    for name, value in (("fit", fit), ("reach", reach),
+                        ("ats_score", ats_score),
+                        ("offer_probability", offer_probability)):
+        if value is not None and not 0 <= value <= 100:
+            raise ValueError(name + " must be between 0 and 100, got " + str(value))
+    store.upsert_score(conn, {
+        "job_id": job_id,
+        "fit": fit,
+        "reach": reach,
+        "dimensions": dimensions,
+        "rationale": rationale,
+        "ats_score": ats_score,
+        "offer_probability": offer_probability,
+        "model": model,
+        "estimate_note": estimate_note,
+        "profile_version": profile_version,
+        "rubric_version": rubric_version,
+    })
+    return {"job_id": job_id, "fit": fit, "reach": reach}
+
+
+def save_scores(conn, batch, model=None):
+    saved = []
+    missing = []
+    for item in batch:
+        result = save_score(
+            conn,
+            item["job_id"],
+            item["fit"],
+            item.get("reach"),
+            dimensions=item.get("dimensions"),
+            rationale=item.get("rationale"),
+            ats_score=item.get("ats_score"),
+            offer_probability=item.get("offer_probability"),
+            estimate_note=item.get("estimate_note"),
+            model=item.get("model", model),
+        )
+        if result is None:
+            missing.append(item["job_id"])
+        else:
+            saved.append(result)
+    return {"saved": saved, "unknown_job_ids": missing}
+
+
+def mark_many(conn, marks):
+    done = []
+    missing = []
+    for item in marks:
+        result = mark_job(conn, item["job_id"], item["action"], item.get("reason"))
+        if result is None:
+            missing.append(item["job_id"])
+        else:
+            done.append(result)
+    return {"marked": done, "unknown_job_ids": missing}
+
+
+def top_jobs(conn, limit=10, min_fit=None):
+    where = "WHERE job.gate_status = 'passed' AND score.fit IS NOT NULL"
+    args = []
+    if min_fit is not None:
+        where += " AND score.fit >= ?"
+        args.append(min_fit)
+    rows = conn.execute(
+        "SELECT " + JOB_FIELDS + " FROM job" + LATEST_SCORE + " " + where +
+        " ORDER BY score.fit DESC, " + EFFECTIVE_REACH + " DESC LIMIT ?",
+        args + [limit],
+    ).fetchall()
+    return [shape_job(r) for r in rows]
+
+
+def dashboard(conn, hours=48):
+    counts = {}
+    for row in conn.execute(
+        "SELECT gate_status, COUNT(*) AS n FROM job GROUP BY gate_status"
+    ):
+        counts[row["gate_status"]] = row["n"]
+
+    cutoff = (now() - timedelta(hours=hours)).isoformat(timespec="seconds")
+    window_counts = {}
+    for row in conn.execute(
+        "SELECT gate_status, COUNT(*) AS n FROM job"
+        " WHERE first_seen_at >= ? GROUP BY gate_status",
+        (cutoff,),
+    ):
+        window_counts[row["gate_status"]] = row["n"]
+    window_total = sum(window_counts.values())
+    window_passed = window_counts.get("passed", 0)
+
+    window_awaiting = conn.execute(
+        "SELECT COUNT(*) AS n FROM job WHERE gate_status = 'passed'"
+        " AND first_seen_at >= ? AND id NOT IN (SELECT job_id FROM score)",
+        (cutoff,),
+    ).fetchone()["n"]
+    all_awaiting = conn.execute(
+        "SELECT COUNT(*) AS n FROM job WHERE gate_status = 'passed'"
+        " AND id NOT IN (SELECT job_id FROM score)"
+    ).fetchone()["n"]
+
+    shortlisted = conn.execute(
+        "SELECT COUNT(*) AS n FROM job WHERE status = 'shortlisted'"
+    ).fetchone()["n"]
+
+    month = now().strftime("%Y-%m")
+    applied_month = conn.execute(
+        "SELECT COUNT(*) AS n FROM application WHERE applied_at LIKE ?",
+        (month + "%",),
+    ).fetchone()["n"]
+
+    window_raw = conn.execute(
+        "SELECT COUNT(*) AS n FROM raw_posting WHERE fetched_at >= ?", (cutoff,)
+    ).fetchone()["n"]
+
+    last_run = conn.execute("SELECT * FROM run_log ORDER BY id DESC LIMIT 1").fetchone()
+
+    return {
+        "window_hours": hours,
+        "last_run": dict(last_run) if last_run else None,
+        "cards": [
+            {"key": "New postings", "value": window_total, "tone": None,
+             "sub": _dedup_note(window_raw, window_total) if window_total or window_raw
+             else "no pull in this window yet"},
+            {"key": "Worth a look", "value": window_passed, "tone": "mint",
+             "sub": (_filtered_out(window_total, window_passed) + " - this is what Jobs shows you")
+             if window_total else "nothing new to check yet"},
+            {"key": "Not rated yet", "value": window_awaiting, "tone": "amber",
+             "sub": "ask Claude to rate these" if window_awaiting
+             else "all caught up for this window"},
+            {"key": "You saved", "value": shortlisted, "tone": "pine",
+             "sub": "your shortlist, all time"},
+            {"key": "Applied this month", "value": applied_month, "tone": None,
+             "sub": now().strftime("%B %Y")},
+        ],
+        "response_by_band": response_by_band(conn),
+        "next_actions": next_actions(conn, all_awaiting),
+        "gate_counts": counts,
+    }
+
+
+def _dedup_note(seen, total):
+    if not seen:
+        return "nothing searched yet"
+    removed = seen - total
+    if removed <= 0:
+        return "from " + str(seen) + " listings checked"
+    return str(removed) + " repeats removed from " + str(seen) + " listings"
+
+
+def _filtered_out(total, passed):
+    if not total:
+        return "nothing found yet"
+    return str(total - passed) + " did not match and were hidden"
+
+
+def response_by_band(conn):
+    bands = [("Strong matches, 80 and up", 80, 100), ("Decent matches, 60 to 79", 60, 79)]
+    out = []
+    for label, low, high in bands:
+        rows = conn.execute(
+            "SELECT application.status FROM application"
+            " JOIN job ON job.id = application.job_id" + LATEST_SCORE +
+            " WHERE score.fit BETWEEN ? AND ?", (low, high),
+        ).fetchall()
+        sent = [r for r in rows if r["status"] != "drafting"]
+        replied = [r for r in sent if r["status"] in RESPONDED]
+        rate = round(100.0 * len(replied) / len(sent)) if sent else None
+        out.append({
+            "label": label,
+            "rate": rate,
+            "replied": len(replied),
+            "sent": len(sent),
+        })
+    return out
+
+
+def next_actions(conn, awaiting):
+    actions = []
+    if awaiting:
+        actions.append({"text": "Rate " + str(awaiting) + " jobs you have not looked at",
+                        "state": "do this in chat", "tone": "ok"})
+    overdue = conn.execute(
+        "SELECT application.id, job.company_name, application.next_action_at"
+        " FROM application JOIN job ON job.id = application.job_id"
+        " WHERE application.next_action_at IS NOT NULL"
+        " AND application.next_action_at < ? LIMIT 5",
+        (now().isoformat(timespec="seconds"),),
+    ).fetchall()
+    for row in overdue:
+        actions.append({"text": "Chase up " + (row["company_name"] or "unknown"),
+                        "state": "overdue", "tone": "no"})
+    if not actions:
+        actions.append({"text": "Nothing waiting on you. Press Find jobs to look for more.",
+                        "state": "all clear", "tone": "ok"})
+    return actions
+
+
+def sources(conn):
+    last = conn.execute("SELECT * FROM run_log ORDER BY id DESC LIMIT 1").fetchone()
+    detail = _json(last["detail"]) if last else None
+    known = conn.execute("SELECT name, kind FROM source ORDER BY name").fetchall()
+    rows = []
+    for src in known:
+        note = (detail or {}).get(src["name"])
+        rows.append({
+            "name": src["name"],
+            "kind": src["kind"],
+            "detail": note,
+            "state": "done" if note and "failed" not in str(note) else "idle",
+        })
+    return {
+        "last_run": dict(last) if last else None,
+        "sources": rows,
+        "dedup": dedup_module.summary(conn),
+        "breakdown": breakdown(conn),
+    }
+
+
+def breakdown(conn):
+    def group(column, labels=None):
+        out = []
+        for row in conn.execute(
+            "SELECT COALESCE(" + column + ", 'unknown') AS k, COUNT(*) AS n"
+            " FROM job GROUP BY k ORDER BY n DESC"
+        ):
+            key = row["k"]
+            out.append({
+                "key": (labels or {}).get(key, key),
+                "value": key,
+                "count": row["n"],
+            })
+        return out
+
+    passed = conn.execute(
+        "SELECT COALESCE(remote, 'unknown') AS k, COUNT(*) AS n FROM job"
+        " WHERE gate_status = 'passed' GROUP BY k"
+    ).fetchall()
+    return {
+        "work_mode": group("remote"),
+        "country": group("country"),
+        "sponsorship": group("sponsorship_status"),
+        "language": group("language_required", {"de": "German", "en": "English"}),
+        "work_mode_passed": [{"key": r["k"], "count": r["n"]} for r in passed],
+    }
+
+
+def applications(conn):
+    counts = {status: 0 for status in FUNNEL}
+    for row in conn.execute(
+        "SELECT status, COUNT(*) AS n FROM application GROUP BY status"
+    ):
+        counts[row["status"]] = row["n"]
+    rows = conn.execute(
+        "SELECT application.id, application.status, application.applied_at,"
+        " application.next_action, application.next_action_at,"
+        " job.id AS job_id, job.title, job.company_name, job.url,"
+        " job.city, job.country, score.fit, " + EFFECTIVE_REACH + " AS reach"
+        " FROM application JOIN job ON job.id = application.job_id" + LATEST_SCORE +
+        " ORDER BY application.applied_at DESC, application.id DESC"
+    ).fetchall()
+    return {
+        "funnel": [{"key": s, "value": counts[s]} for s in FUNNEL],
+        "rows": [dict(r) for r in rows],
+    }
+
+
+def start_application(conn, job_id):
+    exists = conn.execute("SELECT 1 FROM job WHERE id = ?", (job_id,)).fetchone()
+    if not exists:
+        return None
+    return store.start_application(conn, job_id)
+
+
+def set_application_status(conn, application_id, status, note=None):
+    cur = conn.execute(
+        "UPDATE application SET status = ? WHERE id = ?", (status, application_id)
+    )
+    if cur.rowcount == 0:
+        conn.commit()
+        return None
+    stamp = now().isoformat(timespec="seconds")
+    if status == "applied":
+        conn.execute(
+            "UPDATE application SET applied_at = COALESCE(applied_at, ?) WHERE id = ?",
+            (stamp, application_id),
+        )
+    conn.execute(
+        "INSERT INTO application_event (application_id, event, note, created_at)"
+        " VALUES (?, ?, ?, ?)",
+        (application_id, status, note, stamp),
+    )
+    conn.commit()
+    return {"id": application_id, "status": status, "note": note}
+
+
+def rate_job(conn, job_id, master, user_profile, limits=None, timeout=None):
+    brief = job_brief(conn, job_id, master)
+    if brief is None:
+        return None
+    limits = limits or DEFAULT_BANDS
+    stored = store.get_reach(conn, job_id)
+    reach = stored["reach"] if stored else 0
+    kwargs = {"timeout": timeout} if timeout else {}
+    result = rating.score(brief, master, user_profile, reach, limits, **kwargs)
+    save_score(
+        conn, job_id,
+        fit=result["fit"],
+        dimensions=result["dimensions"],
+        rationale=result["rationale"],
+        ats_score=result["ats_score"],
+        offer_probability=result["offer_probability"],
+        estimate_note=result["estimate_note"],
+        model="claude",
+    )
+    return job_detail(conn, job_id, master)
+
+
+class NotRatedError(Exception):
+    pass
+
+
+def rate_estimate(conn, job_id, master, user_profile, kind, timeout=None):
+    brief = job_brief(conn, job_id, master)
+    if brief is None:
+        return None
+    existing = store.get_score(conn, job_id)
+    if existing is None:
+        raise NotRatedError("This job has no match score yet.")
+    stored = store.get_reach(conn, job_id)
+    reach = stored["reach"] if stored else 0
+    kwargs = {"timeout": timeout} if timeout else {}
+    result = rating.estimate(
+        brief, master, user_profile,
+        existing["fit"], existing.get("rationale"), reach, kind, **kwargs
+    )
+    store.upsert_score(conn, {
+        "job_id": job_id,
+        "profile_version": existing.get("profile_version", "v1"),
+        "rubric_version": existing.get("rubric_version", "v1"),
+        "model": existing.get("model"),
+        "fit": existing["fit"],
+        "reach": existing["reach"],
+        "dimensions": _json(existing.get("dimensions")),
+        "rationale": existing.get("rationale"),
+        "ats_score": result["value"] if kind == "ats" else existing.get("ats_score"),
+        "offer_probability": (
+            result["value"] if kind == "offer" else existing.get("offer_probability")
+        ),
+        "estimate_note": result["note"],
+    })
+    return job_detail(conn, job_id, master)
+
+
+def generate_cv(conn, job_id, master, timeout=None):
+    job = job_detail(conn, job_id, master)
+    if job is None:
+        return None
+    kwargs = {"timeout": timeout} if timeout else {}
+    result = documents_module.tailor_cv(job, master, **kwargs)
+    store.save_document(
+        conn, job_id, "cv",
+        payload=result,
+        master_version=(master.get("identity") or {}).get("name"),
+    )
+    result["job"] = {"id": job["id"], "title": job["title"], "company": job["company"]}
+    return result
+
+
+def generate_letter(conn, job_id, master, user_profile, timeout=None):
+    job = job_detail(conn, job_id, master)
+    if job is None:
+        return None
+    kwargs = {"timeout": timeout} if timeout else {}
+    result = documents_module.cover_letter(job, master, user_profile, **kwargs)
+    store.save_document(
+        conn, job_id, "letter",
+        body=result["body"],
+        payload={"note": result.get("note")},
+        word_count=result["word_count"],
+        master_version=(master.get("identity") or {}).get("name"),
+    )
+    result["job"] = {"id": job["id"], "title": job["title"], "company": job["company"]}
+    return result
+
+
+def stored_document(conn, job_id, kind):
+    row = store.get_document(conn, job_id, kind)
+    if not row:
+        return None
+    row["payload"] = _json(row.get("payload"))
+    row["has_file"] = bool(row.get("path")) and Path(row["path"]).exists()
+    return row
+
+
+def accept_document(conn, job_id, kind, master, documents_dir="documents"):
+    row = store.get_document(conn, job_id, kind)
+    if not row:
+        return None
+    job = conn.execute(
+        "SELECT company_name FROM job WHERE id = ?", (job_id,)
+    ).fetchone()
+    identity = (master or {}).get("identity") or {}
+    target = render.folder(
+        documents_dir, job_id, job["company_name"] if job else "job"
+    )
+    if kind == "cv":
+        payload = _json(row.get("payload")) or {}
+        text = payload.get("rendered") or ""
+        if not text:
+            return {"error": "This draft was made before previews were added. "
+                             "Write it again, then save."}
+        path = render.cv_docx(text, identity, target / "cv.docx")
+    else:
+        path = render.letter_docx(row.get("body") or "", identity,
+                                  target / "cover-letter.docx")
+    conn.execute(
+        "UPDATE document SET accepted = 1, path = ? WHERE id = ?",
+        (str(path), row["id"]),
+    )
+    conn.commit()
+    application = store.start_application(conn, job_id)
+    return {
+        "job_id": job_id, "kind": kind, "accepted": True, "path": str(path),
+        "application_status": application["status"] if application else None,
+    }
+
+
+def discard_document(conn, job_id, kind):
+    row = store.get_document(conn, job_id, kind)
+    if not row:
+        return None
+    if row.get("path"):
+        target = Path(row["path"])
+        if target.exists():
+            target.unlink()
+    conn.execute("DELETE FROM document WHERE id = ?", (row["id"],))
+    conn.commit()
+    return {"job_id": job_id, "kind": kind, "discarded": True}
+
+
+def documents(conn, job_id):
+    rows = conn.execute(
+        "SELECT id, kind, path, master_version, created_at FROM document"
+        " WHERE job_id = ? ORDER BY created_at DESC", (job_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def all_documents(conn):
+    rows = conn.execute(
+        "SELECT document.id, document.job_id, document.kind, document.path,"
+        " document.created_at, job.title, job.company_name"
+        " FROM document JOIN job ON job.id = document.job_id"
+        " WHERE document.accepted = 1 ORDER BY document.created_at DESC"
+    ).fetchall()
+    return [
+        {
+            "id": r["id"], "job_id": r["job_id"], "kind": r["kind"],
+            "has_file": bool(r["path"]) and Path(r["path"]).exists(),
+            "created_at": r["created_at"], "title": r["title"],
+            "company": r["company_name"],
+        }
+        for r in rows
+    ]
+
+
+def master_cv(master=None):
+    if not master:
+        return {
+            "available": False,
+            "tiers": {tier: [] for tier in profile.TIERS},
+            "pending": [],
+            "hint": "master.yaml not found. Create it to enable CV tailoring.",
+        }
+    return {
+        "available": True,
+        "tiers": profile.skill_tiers(master),
+        "pending": master.get("pending_keywords") or [],
+        "hint": None,
+    }
+
+
+MASTER_UPLOAD_KINDS = ("cv", "letter")
+MASTER_UPLOAD_EXTENSIONS = (".pdf", ".docx", ".doc", ".txt", ".md", ".rtf")
+
+
+def _master_upload_dir(documents_dir):
+    path = Path(documents_dir) / "master"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _extract_text(path):
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".docx":
+            from docx import Document
+            doc = Document(str(path))
+            return "\n".join(p.text for p in doc.paragraphs).strip() or None
+        if suffix == ".pdf":
+            from pypdf import PdfReader
+            reader = PdfReader(str(path))
+            text = "\n".join((page.extract_text() or "") for page in reader.pages)
+            return text.strip() or None
+        if suffix in (".txt", ".md"):
+            return path.read_text(encoding="utf-8", errors="replace").strip() or None
+    except Exception:
+        return None
+    return None
+
+
+def save_master_upload(documents_dir, kind, filename, content):
+    if kind not in MASTER_UPLOAD_KINDS:
+        raise ValueError("kind must be cv or letter")
+    suffix = Path(filename or "").suffix.lower()
+    if suffix not in MASTER_UPLOAD_EXTENSIONS:
+        raise ValueError(
+            "unsupported file type " + suffix + ", use one of " +
+            ", ".join(MASTER_UPLOAD_EXTENSIONS)
+        )
+    folder = _master_upload_dir(documents_dir)
+    target = folder / (kind + suffix)
+    for existing in folder.glob(kind + ".*"):
+        existing.unlink()
+    target.write_bytes(content)
+    text = _extract_text(target)
+    if text:
+        (folder / (kind + ".txt")).write_text(text, encoding="utf-8")
+    meta = {
+        "filename": Path(filename).name,
+        "uploaded_at": now().isoformat(timespec="seconds"),
+        "has_text": bool(text),
+    }
+    (folder / (kind + ".meta.json")).write_text(json.dumps(meta), encoding="utf-8")
+    meta["kind"] = kind
+    meta["has_file"] = True
+    return meta
+
+
+MASTER_PREVIEW_CHARS = 1500
+
+
+def master_upload_info(documents_dir, kind):
+    folder = _master_upload_dir(documents_dir)
+    meta_path = folder / (kind + ".meta.json")
+    if not meta_path.exists():
+        return None
+    meta = _json(meta_path.read_text(encoding="utf-8")) or {}
+    stored = next(
+        (p for p in folder.glob(kind + ".*") if p.suffix not in (".json", ".txt")),
+        None,
+    )
+    meta["kind"] = kind
+    meta["has_file"] = bool(stored and stored.exists())
+    text_path = folder / (kind + ".txt")
+    if text_path.exists():
+        text = text_path.read_text(encoding="utf-8")
+        meta["preview"] = text[:MASTER_PREVIEW_CHARS]
+        meta["preview_truncated"] = len(text) > MASTER_PREVIEW_CHARS
+    else:
+        meta["preview"] = None
+        meta["preview_truncated"] = False
+    return meta
+
+
+def master_upload_path(documents_dir, kind):
+    folder = _master_upload_dir(documents_dir)
+    return next(
+        (p for p in folder.glob(kind + ".*") if p.suffix not in (".json", ".txt")),
+        None,
+    )
+
+
+def discard_master_upload(documents_dir, kind):
+    folder = _master_upload_dir(documents_dir)
+    matches = list(folder.glob(kind + ".*"))
+    for p in matches:
+        p.unlink()
+    return bool(matches)

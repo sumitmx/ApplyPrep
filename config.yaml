@@ -1,0 +1,144 @@
+db_path: jobs.db
+port: 8756
+master_path: master.yaml
+watchlist_path: watchlist.yaml
+
+countries:
+  - DE
+  - NL
+
+since_days: 14
+
+reach:
+  blue_card_eur: 48300
+  factors:
+    confirmed: 1.0
+    unknown: 0.55
+    denied: 0.05
+  weights:
+    language: 20
+    employer: 20
+    freshness: 20
+    location: 20
+    salary: 20
+
+bands:
+  strong_match: 70
+  strong_chance: 50
+  medium_match: 45
+  medium_chance: 45
+
+gate:
+  sponsor_bypass_title: true
+  min_salary_eur: null
+  require_english_only: false
+  allow_contract: true
+  max_age_days: 45
+  title_must_match:
+    - architect
+    - architekt
+    - automation
+    - automatisierung
+    - rpa
+    - ai engineer
+    - ml engineer
+    - machine learning
+    - platform lead
+    - platform engineer
+    - principal engineer
+    - staff engineer
+    - lead engineer
+    - tech lead
+    - head of engineering
+    - head of platform
+    - director of engineering
+    - engineering manager
+    - integration lead
+    - orchestration
+    - agentic
+    - software engineer
+    - backend engineer
+    - consultant
+  skill_overlap_min: 2
+  title_generic_keywords:
+    - platform lead
+    - platform engineer
+    - principal engineer
+    - staff engineer
+    - lead engineer
+    - tech lead
+    - head of engineering
+    - head of platform
+    - director of engineering
+    - engineering manager
+    - integration lead
+    - software engineer
+    - backend engineer
+    - consultant
+  title_must_not_match:
+    - intern
+    - internship
+    - graduate
+    - working student
+    - werkstudent
+    - praktikum
+    - praktikant
+    - ausbildung
+    - trainee
+    - junior
+    - sales
+    - account executive
+    - business development
+    - marketing
+    - customer success
+    - recruiter
+    - talent acquisition
+    - people partner
+    - accountant
+    - auditor
+    - paralegal
+    - copywriter
+    - content writer
+    - vertrieb
+    - buchhaltung
+
+sources:
+  arbeitnow:
+    enabled: true
+  remotive:
+    enabled: true
+    region_filter: true
+  remoteok:
+    enabled: true
+    region_filter: true
+  wwr:
+    enabled: true
+    region_filter: true
+  adzuna:
+    enabled: false
+    app_id: null
+    app_key: null
+    max_pages: 2
+    results_per_page: 50
+    queries:
+      - automation architect
+      - solution architect
+      - ai engineer
+      - platform engineer
+      - rpa
+  greenhouse:
+    enabled: true
+    region_filter: true
+    pause_seconds: 0.4
+  lever:
+    enabled: true
+    region_filter: true
+    pause_seconds: 0.4
+  ashby:
+    enabled: true
+    region_filter: true
+    pause_seconds: 0.4
+  workable:
+    enabled: true
+    region_filter: true
+    pause_seconds: 1.0
