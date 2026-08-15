@@ -42,6 +42,9 @@ def init(conn):
 
 def migrate(conn):
     applied = []
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
     for table, columns in ADDED_COLUMNS.items():
         cur = conn.execute("PRAGMA table_info(" + table + ")")
         existing = {r["name"] for r in cur.fetchall()}
@@ -51,9 +54,22 @@ def migrate(conn):
                     "ALTER TABLE " + table + " ADD COLUMN " + name + " " + kind
                 )
                 applied.append(table + "." + name)
-    if applied:
-        conn.commit()
+    conn.commit()
     return applied
+
+
+def get_setting(conn, key, default=None):
+    row = conn.execute("SELECT value FROM setting WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(conn, key, value):
+    conn.execute(
+        "INSERT INTO setting (key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+    conn.commit()
 
 
 def source_id(conn, name, kind):

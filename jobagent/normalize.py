@@ -82,6 +82,17 @@ SPONSOR_NO = [
     "no sponsorship available",
 ]
 
+_SPONSOR_FILLER = r"(?:currently|unfortunately|sadly|presently|immediately|generally|typically)"
+_SPONSOR_GRANT_VERBS = r"(?:offer|provide|support|guarantee|give)\w*"
+
+_SPONSOR_NEGATION = re.compile(
+    r"(?:unable to|not able to|cannot|can't|won't|will not|do not|don't|"
+    r"does not|doesn't|no longer able to)"
+    r"(?:\s+" + _SPONSOR_FILLER + r")?\s+"
+    r"(?:sponsor\w*|" + _SPONSOR_GRANT_VERBS +
+    r"(?:\s+\w+){0,4}\s+(?:sponsor\w*|visa))"
+)
+
 GERMAN_HINTS = [
     "german language", "deutschkenntnisse", "fliessend deutsch",
     "german b2", "german c1", "sehr gute deutschkenntnisse",
@@ -225,6 +236,8 @@ def detect_sponsorship(text):
     for phrase in SPONSOR_NO:
         if phrase in low:
             return "denied"
+    if _SPONSOR_NEGATION.search(low):
+        return "denied"
     for phrase in SPONSOR_YES:
         if phrase in low:
             return "confirmed"

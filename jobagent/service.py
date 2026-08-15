@@ -3,6 +3,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from . import agent
+from . import chat as chat_module
 from . import dedup as dedup_module
 from . import documents as documents_module
 from . import profile, rating, store
@@ -91,13 +93,13 @@ def badges(row):
     out = []
     sponsorship = row.get("sponsorship_status")
     if sponsorship == "confirmed":
-        out.append({"text": "sponsors visas", "tone": "pine"})
+        out.append({"text": "sponsors visas", "tone": "pine", "strong": True})
     elif sponsorship == "denied":
-        out.append({"text": "no visa sponsorship", "tone": "rust"})
+        out.append({"text": "no visa sponsorship", "tone": "rust", "strong": True})
     else:
-        out.append({"text": "visa not mentioned", "tone": "amber"})
+        out.append({"text": "visa not mentioned", "tone": "amber", "strong": True})
     if row.get("language_required") == "de":
-        out.append({"text": "German needed", "tone": "amber"})
+        out.append({"text": "German needed", "tone": "amber", "strong": True})
     else:
         out.append({"text": "English is enough", "tone": "slate"})
     if row.get("via_agency"):
@@ -117,10 +119,10 @@ BANDS = [
      "blurb": "Suit you well and realistically reachable"},
     {"key": "medium", "label": "Worth considering", "tone": "mint",
      "blurb": "A decent fit, or reachable but not an obvious match"},
-    {"key": "low", "label": "Long shots", "tone": "rust",
-     "blurb": "Weak on merit, on reachability, or both"},
     {"key": "unrated", "label": "Not rated yet", "tone": "amber",
      "blurb": "Ask Claude to rate these and they move into a band"},
+    {"key": "low", "label": "Long shots", "tone": "rust",
+     "blurb": "Weak on merit, on reachability, or both"},
 ]
 
 DEFAULT_BANDS = {
@@ -130,13 +132,47 @@ DEFAULT_BANDS = {
     "medium_chance": 45,
 }
 
+BAND_RANK = {"strong": 0, "medium": 1, "unrated": 2, "low": 3}
+RANK_BAND = {v: k for k, v in BAND_RANK.items()}
+
 
 def band_limits(cfg=None):
     return dict(DEFAULT_BANDS, **((cfg or {}).get("bands") or {}))
 
 
-def band_for(fit, reach, limits=None):
+AI_PROVIDER_KEY = "ai_provider"
+
+
+def get_ai_provider(conn):
+    return store.get_setting(conn, AI_PROVIDER_KEY, agent.DEFAULT_PROVIDER)
+
+
+def set_ai_provider(conn, provider):
+    if provider not in agent.PROVIDERS:
+        raise ValueError("unknown AI provider " + repr(provider))
+    store.set_setting(conn, AI_PROVIDER_KEY, provider)
+    return provider
+
+
+def ai_providers(conn):
+    return {
+        "current": get_ai_provider(conn),
+        "options": [
+            {
+                "key": key,
+                "label": info["label"],
+                "available": agent.available(key),
+                "model": agent.model(key),
+            }
+            for key, info in agent.PROVIDERS.items()
+        ],
+    }
+
+
+def band_for(fit, reach, limits=None, gate_status=None):
     limits = limits or DEFAULT_BANDS
+    if gate_status == "rejected":
+        return "low"
     if fit is None:
         return "unrated"
     chance = reach if reach is not None else 0
@@ -207,6 +243,7 @@ def shape_job(row, limits=None, source_names=None):
         "employment_type": data.get("employment_type"),
         "posted_at": data.get("posted_at"),
         "posted_age": relative_age(data.get("posted_at")),
+        "found_age": relative_age(data.get("first_seen_at")),
         "url": data.get("url"),
         "websites": websites_for(data.get("source_ids"), source_names or {}),
         "sponsorship": data.get("sponsorship_status"),
@@ -216,6 +253,7 @@ def shape_job(row, limits=None, source_names=None):
         "gate_reason": data.get("gate_reason"),
         "status": data.get("status"),
         "saved": data.get("status") == "shortlisted",
+        "applied": data.get("application_applied_at") is not None,
         "requirements": requirements or (data.get("description") or "").strip() or None,
         "requirements_found": requirements is not None,
         "badges": badges(data),
@@ -243,13 +281,30 @@ def shape_job(row, limits=None, source_names=None):
         "note": data.get("estimate_note"),
         "estimated": ["ats_score", "offer_probability"],
     }
-    job["band"] = band_for(data.get("fit"), reach, limits)
+    job["band"] = band_for(data.get("fit"), reach, limits, data.get("gate_status"))
     return job
 
 
+BAND_RANK_SQL = (
+    "CASE"
+    " WHEN job.gate_status = 'rejected' THEN 3"
+    " WHEN score.fit IS NULL THEN 2"
+    " WHEN score.fit >= ? AND " + EFFECTIVE_REACH + " >= ? THEN 0"
+    " WHEN score.fit >= ? OR " + EFFECTIVE_REACH + " >= ? THEN 1"
+    " ELSE 3"
+    " END"
+)
+
+
 def jobs(conn, gate=None, country=None, min_fit=None, status=None,
-         hours=None, remote=None, agency=None, source=None,
-         limit=50, offset=0, limits=None):
+         hours=None, remote=None, agency=None, source=None, band=None,
+         applied=None, limit=50, offset=0, limits=None):
+    limits = limits or DEFAULT_BANDS
+    band_args = [
+        limits["strong_match"], limits["strong_chance"],
+        limits["medium_match"], limits["medium_chance"],
+    ]
+    joins = LATEST_SCORE + " LEFT JOIN application ON application.job_id = job.id"
     where = []
     args = []
     if gate:
@@ -274,7 +329,7 @@ def jobs(conn, gate=None, country=None, min_fit=None, status=None,
         args.append(min_fit)
     if hours is not None:
         cutoff = (now() - timedelta(hours=hours)).isoformat(timespec="seconds")
-        where.append("job.first_seen_at >= ?")
+        where.append("job.posted_at >= ?")
         args.append(cutoff)
     if source:
         where.append(
@@ -282,17 +337,27 @@ def jobs(conn, gate=None, country=None, min_fit=None, status=None,
             " WHERE je.value = (SELECT id FROM source WHERE name = ?))"
         )
         args.append(source)
+    if band:
+        where.append("(" + BAND_RANK_SQL + ") = ?")
+        args.extend(band_args)
+        args.append(BAND_RANK.get(band, -1))
+    if applied:
+        where.append("application.applied_at IS NOT NULL")
+    else:
+        where.append("application.applied_at IS NULL")
     clause = (" WHERE " + " AND ".join(where)) if where else ""
 
     total = conn.execute(
-        "SELECT COUNT(*) AS n FROM job" + LATEST_SCORE + clause, args
+        "SELECT COUNT(*) AS n FROM job" + joins + clause, args
     ).fetchone()["n"]
 
     rows = conn.execute(
-        "SELECT " + JOB_FIELDS + " FROM job" + LATEST_SCORE + clause +
-        " ORDER BY " + EFFECTIVE_REACH + " DESC, score.fit DESC, job.posted_at DESC"
+        "SELECT " + JOB_FIELDS + ", application.applied_at AS application_applied_at"
+        " FROM job" + joins + clause +
+        " ORDER BY " + BAND_RANK_SQL + " ASC, " + EFFECTIVE_REACH +
+        " DESC, score.fit DESC, job.posted_at DESC"
         " LIMIT ? OFFSET ?",
-        args + [limit, offset],
+        args + band_args + [limit, offset],
     ).fetchall()
     names = _source_names(conn)
     shaped = [shape_job(r, limits, names) for r in rows]
@@ -300,8 +365,11 @@ def jobs(conn, gate=None, country=None, min_fit=None, status=None,
     for job in shaped:
         counts[job["band"]] = counts.get(job["band"], 0) + 1
     total_passed = conn.execute(
-        "SELECT COUNT(*) AS n FROM job WHERE gate_status = 'passed'"
-        " AND status NOT IN ('hidden', 'rejected')"
+        "SELECT COUNT(*) AS n FROM job LEFT JOIN application"
+        " ON application.job_id = job.id"
+        " WHERE job.gate_status = 'passed'"
+        " AND job.status NOT IN ('hidden', 'rejected')"
+        " AND application.applied_at IS NULL"
     ).fetchone()["n"]
     return {"total": total, "total_passed": total_passed, "limit": limit,
             "offset": offset, "jobs": shaped, "bands": BANDS, "band_counts": counts}
@@ -326,6 +394,7 @@ def job_detail(conn, job_id, master=None):
         "SELECT id, status, applied_at FROM application WHERE job_id = ?", (job_id,)
     ).fetchone()
     job["application"] = dict(app_row) if app_row else None
+    job["applied"] = bool(app_row and app_row["applied_at"])
     return job
 
 
@@ -481,32 +550,58 @@ def top_jobs(conn, limit=10, min_fit=None):
     return [shape_job(r) for r in rows]
 
 
-def dashboard(conn, hours=48):
+def dashboard(conn, hours=168, limits=None):
+    limits = limits or DEFAULT_BANDS
     counts = {}
     for row in conn.execute(
         "SELECT gate_status, COUNT(*) AS n FROM job GROUP BY gate_status"
     ):
         counts[row["gate_status"]] = row["n"]
 
+    band_args = [
+        limits["strong_match"], limits["strong_chance"],
+        limits["medium_match"], limits["medium_chance"],
+    ]
+    band_counts = {b["key"]: 0 for b in BANDS}
+    for row in conn.execute(
+        "SELECT (" + BAND_RANK_SQL + ") AS rank, COUNT(*) AS n"
+        " FROM job" + LATEST_SCORE +
+        " LEFT JOIN application ON application.job_id = job.id"
+        " WHERE job.gate_status = 'passed' AND job.status NOT IN ('hidden', 'rejected')"
+        " AND application.applied_at IS NULL"
+        " GROUP BY rank",
+        band_args,
+    ):
+        band_counts[RANK_BAND.get(row["rank"], "low")] = row["n"]
+
     cutoff = (now() - timedelta(hours=hours)).isoformat(timespec="seconds")
     window_counts = {}
     for row in conn.execute(
-        "SELECT gate_status, COUNT(*) AS n FROM job"
-        " WHERE first_seen_at >= ? GROUP BY gate_status",
+        "SELECT job.gate_status AS gate_status, COUNT(*) AS n FROM job"
+        " LEFT JOIN application ON application.job_id = job.id"
+        " WHERE job.posted_at >= ? AND job.status NOT IN ('hidden', 'rejected')"
+        " AND application.applied_at IS NULL"
+        " GROUP BY job.gate_status",
         (cutoff,),
     ):
         window_counts[row["gate_status"]] = row["n"]
     window_total = sum(window_counts.values())
-    window_passed = window_counts.get("passed", 0)
 
-    window_awaiting = conn.execute(
-        "SELECT COUNT(*) AS n FROM job WHERE gate_status = 'passed'"
-        " AND first_seen_at >= ? AND id NOT IN (SELECT job_id FROM score)",
-        (cutoff,),
-    ).fetchone()["n"]
     all_awaiting = conn.execute(
-        "SELECT COUNT(*) AS n FROM job WHERE gate_status = 'passed'"
-        " AND id NOT IN (SELECT job_id FROM score)"
+        "SELECT COUNT(*) AS n FROM job LEFT JOIN application"
+        " ON application.job_id = job.id"
+        " WHERE job.gate_status = 'passed'"
+        " AND job.status NOT IN ('hidden', 'rejected')"
+        " AND job.id NOT IN (SELECT job_id FROM score)"
+        " AND application.applied_at IS NULL"
+    ).fetchone()["n"]
+
+    all_passed = conn.execute(
+        "SELECT COUNT(*) AS n FROM job LEFT JOIN application"
+        " ON application.job_id = job.id"
+        " WHERE job.gate_status = 'passed'"
+        " AND job.status NOT IN ('hidden', 'rejected')"
+        " AND application.applied_at IS NULL"
     ).fetchone()["n"]
 
     shortlisted = conn.execute(
@@ -519,25 +614,21 @@ def dashboard(conn, hours=48):
         (month + "%",),
     ).fetchone()["n"]
 
-    window_raw = conn.execute(
-        "SELECT COUNT(*) AS n FROM raw_posting WHERE fetched_at >= ?", (cutoff,)
-    ).fetchone()["n"]
-
     last_run = conn.execute("SELECT * FROM run_log ORDER BY id DESC LIMIT 1").fetchone()
+    period = _period_label(hours)
 
     return {
         "window_hours": hours,
         "last_run": dict(last_run) if last_run else None,
         "cards": [
             {"key": "New postings", "value": window_total, "tone": None,
-             "sub": _dedup_note(window_raw, window_total) if window_total or window_raw
-             else "no pull in this window yet"},
-            {"key": "Worth a look", "value": window_passed, "tone": "mint",
-             "sub": (_filtered_out(window_total, window_passed) + " - this is what Jobs shows you")
-             if window_total else "nothing new to check yet"},
-            {"key": "Not rated yet", "value": window_awaiting, "tone": "amber",
-             "sub": "ask Claude to rate these" if window_awaiting
-             else "all caught up for this window"},
+             "sub": ("posted in the last " + period) if window_total
+             else "nothing posted in the last " + period},
+            {"key": "Worth a look", "value": all_passed, "tone": "mint",
+             "sub": "in Jobs right now" if all_passed else "nothing worth a look yet"},
+            {"key": "Not rated yet", "value": all_awaiting, "tone": "amber",
+             "sub": "ask Claude to rate these" if all_awaiting
+             else "all caught up"},
             {"key": "You saved", "value": shortlisted, "tone": "pine",
              "sub": "your shortlist, all time"},
             {"key": "Applied this month", "value": applied_month, "tone": None,
@@ -546,22 +637,16 @@ def dashboard(conn, hours=48):
         "response_by_band": response_by_band(conn),
         "next_actions": next_actions(conn, all_awaiting),
         "gate_counts": counts,
+        "band_counts": band_counts,
+        "bands": BANDS,
     }
 
 
-def _dedup_note(seen, total):
-    if not seen:
-        return "nothing searched yet"
-    removed = seen - total
-    if removed <= 0:
-        return "from " + str(seen) + " listings checked"
-    return str(removed) + " repeats removed from " + str(seen) + " listings"
-
-
-def _filtered_out(total, passed):
-    if not total:
-        return "nothing found yet"
-    return str(total - passed) + " did not match and were hidden"
+def _period_label(hours):
+    if hours % 24 == 0:
+        days = hours // 24
+        return str(days) + (" day" if days == 1 else " days")
+    return str(hours) + (" hour" if hours == 1 else " hours")
 
 
 def response_by_band(conn):
@@ -646,12 +731,22 @@ def breakdown(conn):
         "SELECT COALESCE(remote, 'unknown') AS k, COUNT(*) AS n FROM job"
         " WHERE gate_status = 'passed' GROUP BY k"
     ).fetchall()
+    by_source = conn.execute(
+        "SELECT source.name AS name, COUNT(DISTINCT job.id) AS n"
+        " FROM job, json_each(job.source_ids) je"
+        " JOIN source ON source.id = je.value"
+        " LEFT JOIN application ON application.job_id = job.id"
+        " WHERE job.status NOT IN ('hidden', 'rejected')"
+        " AND application.applied_at IS NULL"
+        " GROUP BY source.name ORDER BY n DESC"
+    ).fetchall()
     return {
         "work_mode": group("remote"),
         "country": group("country"),
         "sponsorship": group("sponsorship_status"),
         "language": group("language_required", {"de": "German", "en": "English"}),
         "work_mode_passed": [{"key": r["k"], "count": r["n"]} for r in passed],
+        "by_source": [{"key": r["name"], "count": r["n"]} for r in by_source],
     }
 
 
@@ -704,6 +799,12 @@ def set_application_status(conn, application_id, status, note=None):
     return {"id": application_id, "status": status, "note": note}
 
 
+def mark_applied_if_new(conn, job_id):
+    app = start_application(conn, job_id)
+    if app and not app.get("applied_at"):
+        set_application_status(conn, app["id"], "applied")
+
+
 def rate_job(conn, job_id, master, user_profile, limits=None, timeout=None):
     brief = job_brief(conn, job_id, master)
     if brief is None:
@@ -711,8 +812,10 @@ def rate_job(conn, job_id, master, user_profile, limits=None, timeout=None):
     limits = limits or DEFAULT_BANDS
     stored = store.get_reach(conn, job_id)
     reach = stored["reach"] if stored else 0
+    provider = get_ai_provider(conn)
     kwargs = {"timeout": timeout} if timeout else {}
-    result = rating.score(brief, master, user_profile, reach, limits, **kwargs)
+    result = rating.score(brief, master, user_profile, reach, limits,
+                           provider=provider, **kwargs)
     save_score(
         conn, job_id,
         fit=result["fit"],
@@ -721,7 +824,7 @@ def rate_job(conn, job_id, master, user_profile, limits=None, timeout=None):
         ats_score=result["ats_score"],
         offer_probability=result["offer_probability"],
         estimate_note=result["estimate_note"],
-        model="claude",
+        model=agent.PROVIDERS[provider]["label"],
     )
     return job_detail(conn, job_id, master)
 
@@ -742,7 +845,8 @@ def rate_estimate(conn, job_id, master, user_profile, kind, timeout=None):
     kwargs = {"timeout": timeout} if timeout else {}
     result = rating.estimate(
         brief, master, user_profile,
-        existing["fit"], existing.get("rationale"), reach, kind, **kwargs
+        existing["fit"], existing.get("rationale"), reach, kind,
+        provider=get_ai_provider(conn), **kwargs
     )
     store.upsert_score(conn, {
         "job_id": job_id,
@@ -762,17 +866,28 @@ def rate_estimate(conn, job_id, master, user_profile, kind, timeout=None):
     return job_detail(conn, job_id, master)
 
 
+def ask_about_job(conn, job_id, master, question, history=None, timeout=None):
+    brief = job_brief(conn, job_id, master,
+                       description_chars=chat_module.MAX_DESCRIPTION_CHARS)
+    if brief is None:
+        return None
+    kwargs = {"timeout": timeout} if timeout else {}
+    return chat_module.ask(brief, history or [], question,
+                            provider=get_ai_provider(conn), **kwargs)
+
+
 def generate_cv(conn, job_id, master, timeout=None):
     job = job_detail(conn, job_id, master)
     if job is None:
         return None
     kwargs = {"timeout": timeout} if timeout else {}
-    result = documents_module.tailor_cv(job, master, **kwargs)
+    result = documents_module.tailor_cv(job, master, provider=get_ai_provider(conn), **kwargs)
     store.save_document(
         conn, job_id, "cv",
         payload=result,
         master_version=(master.get("identity") or {}).get("name"),
     )
+    mark_applied_if_new(conn, job_id)
     result["job"] = {"id": job["id"], "title": job["title"], "company": job["company"]}
     return result
 
@@ -782,7 +897,9 @@ def generate_letter(conn, job_id, master, user_profile, timeout=None):
     if job is None:
         return None
     kwargs = {"timeout": timeout} if timeout else {}
-    result = documents_module.cover_letter(job, master, user_profile, **kwargs)
+    result = documents_module.cover_letter(
+        job, master, user_profile, provider=get_ai_provider(conn), **kwargs
+    )
     store.save_document(
         conn, job_id, "letter",
         body=result["body"],
@@ -790,6 +907,7 @@ def generate_letter(conn, job_id, master, user_profile, timeout=None):
         word_count=result["word_count"],
         master_version=(master.get("identity") or {}).get("name"),
     )
+    mark_applied_if_new(conn, job_id)
     result["job"] = {"id": job["id"], "title": job["title"], "company": job["company"]}
     return result
 
@@ -811,19 +929,29 @@ def accept_document(conn, job_id, kind, master, documents_dir="documents"):
         "SELECT company_name FROM job WHERE id = ?", (job_id,)
     ).fetchone()
     identity = (master or {}).get("identity") or {}
-    target = render.folder(
-        documents_dir, job_id, job["company_name"] if job else "job"
+    company_name = job["company_name"] if job else "job"
+    default_dir = render.folder(documents_dir, job_id, company_name)
+
+    name_slug = re.sub(r"[^A-Za-z0-9]+", "_", identity.get("name") or "CV").strip("_")
+    company_slug = re.sub(r"[^A-Za-z0-9]+", "_", company_name or "").strip("_")
+    suffix = ("_" + company_slug) if company_slug else ""
+    default_filename = (
+        name_slug + ("_CV" if kind == "cv" else "_Cover_Letter") + suffix + ".docx"
     )
+
+    chosen = render.ask_save_path(default_dir, default_filename)
+    if chosen is None:
+        return {"job_id": job_id, "kind": kind, "cancelled": True}
+
     if kind == "cv":
         payload = _json(row.get("payload")) or {}
         text = payload.get("rendered") or ""
         if not text:
             return {"error": "This draft was made before previews were added. "
                              "Write it again, then save."}
-        path = render.cv_docx(text, identity, target / "cv.docx")
+        path = render.cv_docx(text, identity, chosen)
     else:
-        path = render.letter_docx(row.get("body") or "", identity,
-                                  target / "cover-letter.docx")
+        path = render.letter_docx(row.get("body") or "", identity, chosen)
     conn.execute(
         "UPDATE document SET accepted = 1, path = ? WHERE id = ?",
         (str(path), row["id"]),

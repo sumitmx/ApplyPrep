@@ -146,7 +146,7 @@ def test_prompt_carries_the_skill_tiers_and_their_honesty_labels():
 def test_score_drops_estimates_when_fit_misses_the_bar(monkeypatch):
     monkeypatch.setattr(
         rating.agent, "run_json",
-        lambda prompt, timeout: {"fit": 40, "ats_score": 88, "offer_probability": 70},
+        lambda *a, **k: {"fit": 40, "ats_score": 88, "offer_probability": 70},
     )
     result = rating.score(JOB, MASTER, PROFILE, 90, LIMITS)
     assert result["fit"] == 40
@@ -167,7 +167,7 @@ def test_rate_job_saves_fit_and_leaves_reach_computed(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         rating.agent, "run_json",
-        lambda prompt, timeout: {
+        lambda *a, **k: {
             "fit": 72,
             "dimensions": {"core_technical": 24, "seniority_scope": 16, "domain": 11,
                            "logistics": 14, "compensation": 5, "signal": 2},
@@ -244,7 +244,7 @@ def test_rate_estimate_updates_only_the_requested_field(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         rating.agent, "run_json",
-        lambda prompt, timeout: {"value": 88, "note": "an estimate"},
+        lambda *a, **k: {"value": 88, "note": "an estimate"},
     )
     result = service.rate_estimate(conn, 1, MASTER, PROFILE, "ats")
     assert result["scores"]["ats_score"] == 88
@@ -253,7 +253,7 @@ def test_rate_estimate_updates_only_the_requested_field(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         rating.agent, "run_json",
-        lambda prompt, timeout: {"value": 55, "note": "another estimate"},
+        lambda *a, **k: {"value": 55, "note": "another estimate"},
     )
     result = service.rate_estimate(conn, 1, MASTER, PROFILE, "offer")
     assert result["scores"]["offer_probability"] == 55

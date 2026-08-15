@@ -17,6 +17,12 @@ async function request(path, options) {
 }
 
 export const api = {
+  getSettings: () => request('/settings'),
+  setAiProvider: (aiProvider) =>
+    request('/settings', {
+      method: 'POST',
+      body: JSON.stringify({ ai_provider: aiProvider }),
+    }),
   dashboard: () => request('/dashboard'),
   sources: () => request('/sources'),
   jobs: (params) => {
@@ -42,6 +48,11 @@ export const api = {
       body: JSON.stringify({ status, note: note || null }),
     }),
   startApplication: (jobId) => request('/jobs/' + jobId + '/apply', { method: 'POST' }),
+  askJob: (jobId, question, history) =>
+    request('/jobs/' + jobId + '/ask', {
+      method: 'POST',
+      body: JSON.stringify({ question, history: history || [] }),
+    }),
   masterCv: () => request('/master-cv'),
   uploadMasterCv: async (kind, file) => {
     const body = new FormData()

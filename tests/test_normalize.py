@@ -8,6 +8,7 @@ from jobagent.normalize import (
     detect_agency,
     detect_city,
     detect_country,
+    detect_sponsorship,
     fold,
     stable_key,
 )
@@ -112,3 +113,45 @@ def test_out_of_scope_country_is_not_guessed():
 def test_agency_detection():
     assert detect_agency("Hays Recruitment") is True
     assert detect_agency("Zalando SE") is False
+
+
+def test_sponsorship_confirmed():
+    assert detect_sponsorship("This role offers visa sponsorship.") == "confirmed"
+    assert detect_sponsorship("We sponsor visas for exceptional candidates.") == "confirmed"
+
+
+def test_sponsorship_denied_by_direct_phrase():
+    assert detect_sponsorship("No visa sponsorship available.") == "denied"
+
+
+def test_sponsorship_denied_despite_containing_the_yes_phrase():
+    assert detect_sponsorship(
+        "We are unable to offer visa sponsorship for this role."
+    ) == "denied"
+    assert detect_sponsorship("We do not sponsor work visas.") == "denied"
+    assert detect_sponsorship(
+        "Unfortunately we cannot sponsor a visa for this position."
+    ) == "denied"
+
+
+def test_sponsorship_unknown_when_unmentioned():
+    assert detect_sponsorship("We are a fast-growing fintech company.") == "unknown"
+
+
+def test_sponsorship_negation_does_not_misfire_on_a_requirement_clause():
+    # "visa sponsorship" still appears literally, so this correctly falls through
+    # to the plain keyword match rather than being flagged "denied" by negation.
+    assert detect_sponsorship(
+        "Preference is given to candidates who do not require visa "
+        "sponsorship. However, we are open to candidates who need one."
+    ) == "confirmed"
+    # Same requirement clause, reworded so no SPONSOR_YES phrase appears literally -
+    # this is the real test that negation isn't triggered by "require".
+    assert detect_sponsorship(
+        "Preference is given to candidates who do not require sponsorship "
+        "for a visa. However, we are open to candidates who need one."
+    ) == "unknown"
+
+
+def test_sponsorship_denied_with_an_adverb_before_the_verb():
+    assert detect_sponsorship("We do not currently sponsor visas.") == "denied"

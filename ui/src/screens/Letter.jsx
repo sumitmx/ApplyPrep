@@ -49,7 +49,9 @@ export default function Letter() {
     setError(null)
     try {
       const saved = await api.saveDocument(id, 'letter')
-      setToast({ tone: 'pine', message: 'Saved as a Word file: ' + saved.path })
+      setToast(saved.cancelled
+        ? { tone: 'slate', message: 'Save cancelled.' }
+        : { tone: 'pine', message: 'Saved as a Word file: ' + saved.path })
       await load()
     } catch (e) {
       setError(e)

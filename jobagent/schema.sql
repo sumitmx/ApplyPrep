@@ -114,6 +114,11 @@ CREATE TABLE IF NOT EXISTS document (
     created_at      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS setting (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS run_log (
     id              INTEGER PRIMARY KEY,
     started_at      TEXT NOT NULL,

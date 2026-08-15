@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
-import { Bar, Empty, ErrorBox, Loading, Panel, Pill, Score } from '../components'
+import { AskAIChat, Bar, Empty, ErrorBox, Loading, Panel, Pill, Score } from '../components'
 
 const TIER_LABELS = {
   core: 'Your strongest skills',
@@ -22,6 +22,7 @@ export default function JobDetail() {
   const [estimating, setEstimating] = useState(null)
   const [estimateError, setEstimateError] = useState(null)
   const [tracking, setTracking] = useState(false)
+  const [showChat, setShowChat] = useState(false)
 
   const load = () => {
     setJob(null)
@@ -112,7 +113,9 @@ export default function JobDetail() {
               'job ' + job.id, job.posted_age].filter(Boolean).join(' · ')}
           </p>
           <div className="tags" style={{ marginTop: 8 }}>
-            {job.badges.map((b, i) => <Pill key={i} tone={b.tone}>{b.text}</Pill>)}
+            {job.badges.map((b, i) => (
+              <Pill key={i} tone={b.tone} strong={b.strong}>{b.text}</Pill>
+            ))}
           </div>
         </div>
         <div className="btns" style={{ marginTop: 0 }}>
@@ -120,6 +123,7 @@ export default function JobDetail() {
             onClick={() => navigate('/jobs/' + nb.previous)}>Previous</button>
           <button className="btn" disabled={!nb.next}
             onClick={() => navigate('/jobs/' + nb.next)}>Next</button>
+          <button className="btn pri" onClick={() => setShowChat(true)}>Ask AI</button>
           {job.url && (
             <a className="btn" href={job.url} target="_blank" rel="noreferrer">
               Open posting
@@ -412,6 +416,10 @@ export default function JobDetail() {
         <button className="btn" onClick={() => mark('hide')}>Not interested</button>
         <Link className="btn" to="/jobs">Back to all jobs</Link>
       </div>
+
+      {showChat && (
+        <AskAIChat jobId={job.id} jobTitle={job.title} onClose={() => setShowChat(false)} />
+      )}
     </div>
   )
 }

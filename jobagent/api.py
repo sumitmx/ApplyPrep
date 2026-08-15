@@ -25,6 +25,20 @@ class PullBody(BaseModel):
     since_days: int | None = None
 
 
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
+class AskBody(BaseModel):
+    question: str
+    history: list[ChatTurn] | None = None
+
+
+class SettingsBody(BaseModel):
+    ai_provider: str
+
+
 def create_app(cfg=None):
     cfg = cfg or config.load()
     app = FastAPI(title="ApplyPrep", docs_url="/api/docs", redoc_url=None)
@@ -37,11 +51,40 @@ def create_app(cfg=None):
     def master():
         return profile.load_master(cfg.get("master_path", "master.yaml"))
 
-    @app.get("/api/dashboard")
-    def get_dashboard(hours: int = 48):
+    def _require_agent(conn):
+        provider = service.get_ai_provider(conn)
+        if not agent.available(provider):
+            info = agent.PROVIDERS[provider]
+            raise HTTPException(
+                status_code=503,
+                detail="The " + info["command"] + " command was not found. "
+                       + info["setup_hint"],
+            )
+
+    @app.get("/api/settings")
+    def get_settings():
         conn = db()
         try:
-            return service.dashboard(conn, hours=hours)
+            return service.ai_providers(conn)
+        finally:
+            conn.close()
+
+    @app.post("/api/settings")
+    def post_settings(body: SettingsBody):
+        conn = db()
+        try:
+            service.set_ai_provider(conn, body.ai_provider)
+            return service.ai_providers(conn)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        finally:
+            conn.close()
+
+    @app.get("/api/dashboard")
+    def get_dashboard(hours: int = 168):
+        conn = db()
+        try:
+            return service.dashboard(conn, hours=hours, limits=service.band_limits(cfg))
         finally:
             conn.close()
 
@@ -58,13 +101,16 @@ def create_app(cfg=None):
                  min_fit: int | None = None, status: str | None = None,
                  hours: int | None = None, remote: str | None = None,
                  agency: bool | None = None, source: str | None = None,
+                 band: str | None = None, applied: bool | None = None,
                  limit: int = 50, offset: int = 0):
         conn = db()
         try:
             return service.jobs(conn, gate=gate, country=country, min_fit=min_fit,
                                 status=status, hours=hours, remote=remote,
-                                agency=agency, source=source, limit=min(limit, 200),
-                                offset=offset, limits=service.band_limits(cfg))
+                                agency=agency, source=source, band=band,
+                                applied=applied,
+                                limit=min(limit, 200), offset=offset,
+                                limits=service.band_limits(cfg))
         finally:
             conn.close()
 
@@ -88,19 +134,16 @@ def create_app(cfg=None):
                 status_code=409,
                 detail="master.yaml was not found, so there is nothing to score against.",
             )
-        if not agent.available():
-            raise HTTPException(
-                status_code=503,
-                detail="The claude command was not found. Install Claude Code and "
-                       "sign in, then this works on your subscription with no API key.",
-            )
         conn = db()
         try:
+            _require_agent(conn)
             result = service.rate_job(
                 conn, job_id, loaded,
                 profile.load_profile(cfg.get("profile_path", "profile.yaml")),
                 service.band_limits(cfg),
             )
+        except HTTPException:
+            raise
         except agent.AgentError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
         except Exception as exc:
@@ -124,19 +167,16 @@ def create_app(cfg=None):
                 status_code=409,
                 detail="master.yaml was not found, so there is nothing to score against.",
             )
-        if not agent.available():
-            raise HTTPException(
-                status_code=503,
-                detail="The claude command was not found. Install Claude Code and "
-                       "sign in, then this works on your subscription with no API key.",
-            )
         conn = db()
         try:
+            _require_agent(conn)
             result = service.rate_estimate(
                 conn, job_id, loaded,
                 profile.load_profile(cfg.get("profile_path", "profile.yaml")),
                 kind,
             )
+        except HTTPException:
+            raise
         except service.NotRatedError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         except agent.AgentError as exc:
@@ -151,6 +191,32 @@ def create_app(cfg=None):
         if result is None:
             raise HTTPException(status_code=404, detail="job not found")
         return result
+
+    @app.post("/api/jobs/{job_id}/ask")
+    def post_ask(job_id: int, body: AskBody):
+        if not body.question.strip():
+            raise HTTPException(status_code=400, detail="question is empty")
+        conn = db()
+        try:
+            _require_agent(conn)
+            history = [t.model_dump() for t in (body.history or [])]
+            answer = service.ask_about_job(
+                conn, job_id, master(), body.question, history,
+            )
+        except HTTPException:
+            raise
+        except agent.AgentError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=type(exc).__name__ + ": " + str(exc)[:300],
+            )
+        finally:
+            conn.close()
+        if answer is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return {"answer": answer}
 
     @app.post("/api/jobs/{job_id}/apply")
     def post_apply(job_id: int):
@@ -254,7 +320,7 @@ def create_app(cfg=None):
         try:
             return {
                 "job_id": job_id,
-                "agent_available": agent.available(),
+                "agent_available": agent.available(service.get_ai_provider(conn)),
                 "cv": service.stored_document(conn, job_id, "cv"),
                 "letter": service.stored_document(conn, job_id, "letter"),
             }
@@ -268,14 +334,9 @@ def create_app(cfg=None):
                 status_code=409,
                 detail="master.yaml was not found, so there is nothing to tailor from.",
             )
-        if not agent.available():
-            raise HTTPException(
-                status_code=503,
-                detail="The claude command was not found. Install Claude Code and "
-                       "sign in, then this works on your subscription with no API key.",
-            )
         conn = db()
         try:
+            _require_agent(conn)
             if kind == "cv":
                 result = service.generate_cv(conn, job_id, loaded)
             else:
@@ -283,6 +344,8 @@ def create_app(cfg=None):
                     conn, job_id, loaded,
                     profile.load_profile(cfg.get("profile_path", "profile.yaml")),
                 )
+        except HTTPException:
+            raise
         except documents.FabricationError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except agent.AgentError as exc:

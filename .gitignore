@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 jobs.db
 jobs.db*
-documents/
+/documents/
 config.local.yaml
 session.log
 node_modules/

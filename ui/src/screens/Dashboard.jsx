@@ -1,25 +1,57 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { Bar, Card, Empty, ErrorBox, Loading, Panel } from '../components'
+import { Bar, BarList, Card, Donut, Empty, ErrorBox, Legend, Loading, Panel } from '../components'
+
+function periodLabel(hours) {
+  if (hours % 24 === 0) {
+    const days = hours / 24
+    return days + (days === 1 ? ' day' : ' days')
+  }
+  return hours + (hours === 1 ? ' hour' : ' hours')
+}
 
 const CARD_LINKS = {
-  'New postings': '/jobs?gate=&hours=48',
-  'Worth a look': '/jobs?gate=passed&hours=48',
-  'Not rated yet': '/jobs?gate=passed&hours=48',
+  'New postings': '/jobs?gate=&hours=168',
+  'Worth a look': '/jobs?gate=passed&hours=',
+  'Not rated yet': '/jobs?gate=unrated',
   'You saved': '/jobs?gate=saved',
   'Applied this month': '/applications',
 }
+
+const FUNNEL_TONE = {
+  drafting: 'slate', applied: 'amber', screening: 'amber',
+  interview: 'mint', offer: 'pine', rejected: 'rust',
+}
+
+const FUNNEL_LABEL = {
+  drafting: 'Drafting', applied: 'Applied', screening: 'Screening',
+  interview: 'Interview', offer: 'Offer', rejected: 'Rejected',
+}
+
+const TIER_ROWS = [
+  { key: 'core', label: 'Strongest skills', tone: 'pine' },
+  { key: 'working', label: 'Worked with', tone: 'mint' },
+  { key: 'familiar', label: 'Some exposure', tone: 'slate' },
+]
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [pulling, setPulling] = useState(false)
   const [result, setResult] = useState(null)
+  const [applications, setApplications] = useState(null)
+  const [sources, setSources] = useState(null)
+  const [masterCv, setMasterCv] = useState(null)
   const navigate = useNavigate()
 
   const load = () => api.dashboard().then(setData).catch(setError)
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    api.applications().then(setApplications).catch(() => setApplications(null))
+    api.sources().then(setSources).catch(() => setSources(null))
+    api.masterCv().then(setMasterCv).catch(() => setMasterCv(null))
+  }, [])
 
   const pull = async () => {
     setPulling(true)
@@ -43,6 +75,29 @@ export default function Dashboard() {
   const bands = data.response_by_band || []
   const noApplications = bands.every((b) => b.sent === 0)
 
+  const bandSegments = (data.bands || []).map((b) => ({
+    key: b.key, label: b.label, tone: b.tone,
+    value: (data.band_counts || {})[b.key] || 0,
+    href: '/jobs?gate=passed&hours=&band=' + b.key,
+  }))
+
+  const funnelRows = (applications ? applications.funnel : []).map((f) => ({
+    key: f.key, label: FUNNEL_LABEL[f.key] || f.key, tone: FUNNEL_TONE[f.key],
+    value: f.value, href: '/applications',
+  }))
+
+  const sourceRows = (sources && sources.breakdown ? sources.breakdown.by_source : [])
+    .slice(0, 6)
+    .map((s) => ({
+      key: s.key, label: s.key, tone: 'pine', value: s.count,
+      href: '/jobs?source=' + encodeURIComponent(s.key) + '&gate=&hours=',
+    }))
+
+  const tierRows = TIER_ROWS.map((t) => ({
+    ...t, value: masterCv && masterCv.tiers ? (masterCv.tiers[t.key] || []).length : 0,
+    href: '/my-cv',
+  }))
+
   return (
     <div>
       <div className="shead">
@@ -50,9 +105,10 @@ export default function Dashboard() {
           <h2>Overview</h2>
           <p>
             Everything here is stored on your laptop. Nothing on this page uses AI.
-            The cards below show the last {data.window_hours} hours, not everything
-            you have ever found. <b>New postings</b> is everything checked, before
-            filtering for fit; <b>Worth a look</b> is what actually shows up in Jobs.
+            <b>New postings</b> is everything posted in the last{' '}
+            {periodLabel(data.window_hours)}, before filtering for fit. The other
+            cards show your current totals, not just recent activity.{' '}
+            <b>Worth a look</b> is what actually shows up in Jobs.
           </p>
         </div>
         <button className="btn pri" onClick={pull} disabled={pulling}>
@@ -134,6 +190,56 @@ export default function Dashboard() {
               </Link>
               .
             </p>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="two">
+        <Panel title="Jobs by fit" note="click a band to see those jobs">
+          <div className="pbody chartrow">
+            <Donut segments={bandSegments} />
+            <Legend items={bandSegments} />
+          </div>
+        </Panel>
+
+        <Panel title="Application pipeline" note="click to open Applications">
+          <div className="pbody">
+            {applications ? (
+              <BarList rows={funnelRows} emptyText="Nothing tracked yet" />
+            ) : (
+              <Loading />
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="two">
+        <Panel title="Where jobs come from" note="top boards, click to see those jobs">
+          <div className="pbody">
+            {sources ? (
+              <BarList rows={sourceRows} emptyText="Nothing pulled yet" />
+            ) : (
+              <Loading />
+            )}
+          </div>
+        </Panel>
+
+        <Panel title="My CV coverage" note="click to open My CV">
+          <div className="pbody">
+            {masterCv ? (
+              masterCv.available ? (
+                <BarList rows={tierRows} />
+              ) : (
+                <Empty
+                  title="No master CV set up yet"
+                  actions={<Link className="btn sm" to="/my-cv">Set it up</Link>}
+                >
+                  Add your CV so tailoring and this breakdown have something to work with.
+                </Empty>
+              )
+            ) : (
+              <Loading />
+            )}
           </div>
         </Panel>
       </div>

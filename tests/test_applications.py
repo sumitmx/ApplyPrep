@@ -19,7 +19,8 @@ def conn(tmp_path):
     store.upsert_job(c, {
         "dedup_key": "k1", "title": "Automation Architect", "company_name": "Acme",
         "country": "DE", "url": "https://example.test/1", "description": "Work",
-        "posted_at": "2026-08-08T00:00:00+00:00", "source_ids": [src],
+        "posted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source_ids": [src],
     })
     c.execute("UPDATE job SET gate_status = 'passed'")
     c.commit()
@@ -97,16 +98,17 @@ def _old_stamp(hours):
 
 
 def test_dashboard_window_excludes_old_postings_from_the_new_cards(conn):
-    conn.execute("UPDATE job SET first_seen_at = ?", (_old_stamp(200),))
+    conn.execute("UPDATE job SET posted_at = ?", (_old_stamp(200),))
     conn.commit()
     body = service.dashboard(conn, hours=48)
     values = {c["key"]: c["value"] for c in body["cards"]}
     assert values["New postings"] == 0
-    assert values["Worth a look"] == 0
+    # "Worth a look" is the all-time backlog, not windowed, so it stays 1.
+    assert values["Worth a look"] == 1
 
 
 def test_dashboard_window_includes_recent_postings(conn):
-    conn.execute("UPDATE job SET first_seen_at = ?", (_old_stamp(1),))
+    conn.execute("UPDATE job SET posted_at = ?", (_old_stamp(1),))
     conn.commit()
     body = service.dashboard(conn, hours=48)
     values = {c["key"]: c["value"] for c in body["cards"]}
@@ -115,7 +117,7 @@ def test_dashboard_window_includes_recent_postings(conn):
 
 
 def test_dashboard_next_actions_use_the_all_time_backlog_not_the_window(conn):
-    conn.execute("UPDATE job SET first_seen_at = ?", (_old_stamp(200),))
+    conn.execute("UPDATE job SET posted_at = ?", (_old_stamp(200),))
     conn.commit()
     body = service.dashboard(conn, hours=48)
     assert any("1 job" in a["text"] for a in body["next_actions"])

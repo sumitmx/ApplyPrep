@@ -182,10 +182,11 @@ def clean(data, strong):
     }
 
 
-def score(job, master, user_profile, reach, limits, timeout=agent.DEFAULT_TIMEOUT):
+def score(job, master, user_profile, reach, limits, timeout=agent.DEFAULT_TIMEOUT,
+          provider=agent.DEFAULT_PROVIDER):
     strong_reach = reach >= limits["strong_chance"]
     prompt = build_prompt(job, master, user_profile, reach, strong_reach)
-    data = agent.run_json(prompt, timeout)
+    data = agent.run_json(prompt, timeout, provider)
     result = clean(data, strong_reach)
     if result["fit"] < limits["strong_match"]:
         result["ats_score"] = None
@@ -261,9 +262,9 @@ def clean_estimate(data):
 
 
 def estimate(job, master, user_profile, fit, rationale, reach, kind,
-             timeout=agent.DEFAULT_TIMEOUT):
+             timeout=agent.DEFAULT_TIMEOUT, provider=agent.DEFAULT_PROVIDER):
     if kind not in ESTIMATE_KINDS:
         raise ValueError("kind must be one of " + ", ".join(ESTIMATE_KINDS))
     prompt = build_estimate_prompt(job, master, user_profile, fit, rationale, reach, kind)
-    data = agent.run_json(prompt, timeout)
+    data = agent.run_json(prompt, timeout, provider)
     return clean_estimate(data)

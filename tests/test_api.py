@@ -26,6 +26,7 @@ def client(tmp_path):
 
 def seed(conn):
     src = store.source_id(conn, "arbeitnow", "aggregator")
+    posted_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     for i, (title, country, sponsorship, mode, agency) in enumerate([
         ("Principal Automation Architect", "DE", "confirmed", "onsite", False),
         ("Lead Platform Architect", "NL", "unknown", "remote", False),
@@ -41,7 +42,7 @@ def seed(conn):
             "via_agency": agency,
             "url": "https://example.test/" + str(i),
             "description": "We use Python and Terraform.",
-            "posted_at": "2026-08-07T00:00:00+00:00",
+            "posted_at": posted_at,
             "sponsorship_status": sponsorship,
             "language_required": "en",
             "source_ids": [src],
@@ -66,26 +67,69 @@ def seed(conn):
 def test_dashboard(client):
     body = client.get("/api/dashboard").json()
     values = [c["value"] for c in body["cards"]]
-    assert values == [3, 2, 1, 0, 1]
+    # job 1 has an application, so it's excluded from "New postings" and
+    # "Worth a look" too, same as the Jobs list default.
+    assert values == [2, 1, 1, 0, 1]
     assert all(c["key"] and c["sub"] for c in body["cards"])
     assert body["gate_counts"]["passed"] == 2
     assert len(body["response_by_band"]) == 2
 
 
+def test_dashboard_matches_jobs_page_after_hiding(client):
+    before = client.get("/api/dashboard").json()
+    values_before = {c["key"]: c["value"] for c in before["cards"]}
+    # job 1 has an application, so "New postings" excludes it too, same as the
+    # Jobs list default.
+    assert values_before["New postings"] == 2
+    assert values_before["Not rated yet"] == 1
+
+    client.post("/api/jobs/2/mark", json={"action": "hide"})
+
+    after = client.get("/api/dashboard").json()
+    values_after = {c["key"]: c["value"] for c in after["cards"]}
+    assert values_after["New postings"] == 1
+    assert values_after["Not rated yet"] == 0
+
+    window = after["window_hours"]
+    everything = client.get("/api/jobs?gate=&hours=" + str(window)).json()
+    assert everything["total"] == values_after["New postings"]
+
+    unrated = client.get(
+        "/api/jobs?gate=passed&hours=" + str(window) + "&band=unrated"
+    ).json()
+    assert unrated["total"] == values_after["Not rated yet"]
+
+
 def test_jobs_list_and_gate_filter(client):
-    assert client.get("/api/jobs").json()["total"] == 3
+    # job 1 has an application, so it's excluded from the default listing.
+    assert client.get("/api/jobs").json()["total"] == 2
     body = client.get("/api/jobs?gate=passed").json()
-    assert body["total"] == 2
+    assert body["total"] == 1
     assert all(j["gate_status"] == "passed" for j in body["jobs"])
 
 
 def test_jobs_carry_a_band(client):
+    # job 1 has an application, so it no longer shows in the default listing -
+    # check its band directly instead.
+    assert client.get("/api/jobs/1").json()["band"] == "strong"
+
     body = client.get("/api/jobs").json()
     bands = {j["id"]: j["band"] for j in body["jobs"]}
-    assert bands[1] == "strong"
     assert bands[2] == "unrated"
-    assert [b["key"] for b in body["bands"]] == ["strong", "medium", "low", "unrated"]
+    assert [b["key"] for b in body["bands"]] == ["strong", "medium", "unrated", "low"]
     assert body["band_counts"]["unrated"] == 2
+
+
+def test_band_filter(client):
+    body = client.get("/api/jobs?band=unrated").json()
+    assert body["total"] == 2
+    assert {j["id"] for j in body["jobs"]} == {2, 3}
+    assert all(j["band"] == "unrated" for j in body["jobs"])
+
+    # job 1 (the only strong band job) has an application, so ask for it explicitly.
+    strong = client.get("/api/jobs?band=strong&applied=1").json()
+    assert strong["total"] == 1
+    assert strong["jobs"][0]["id"] == 1
 
 
 def test_band_thresholds():
@@ -112,11 +156,14 @@ def test_band_thresholds_are_configurable():
 
 def test_work_mode_filter(client):
     assert client.get("/api/jobs?remote=remote").json()["total"] == 1
-    assert client.get("/api/jobs?remote=onsite").json()["total"] == 2
+    # job 1 is onsite too, but excluded from the default listing (it has an application).
+    assert client.get("/api/jobs?remote=onsite").json()["total"] == 1
 
 
 def test_agency_filter(client):
-    assert client.get("/api/jobs?agency=false").json()["total"] == 2
+    # job 1 is a direct employer too, but excluded from the default listing
+    # (it has an application).
+    assert client.get("/api/jobs?agency=false").json()["total"] == 1
     assert client.get("/api/jobs?agency=true").json()["total"] == 1
 
 
@@ -133,23 +180,29 @@ def test_country_filter(client):
 
 
 def test_min_fit_filter(client):
-    assert client.get("/api/jobs?min_fit=80").json()["total"] == 1
-    assert client.get("/api/jobs?min_fit=90").json()["total"] == 0
+    # job 1 (fit 84) is the only scored job, but it has an application, so ask
+    # for it explicitly.
+    assert client.get("/api/jobs?min_fit=80&applied=1").json()["total"] == 1
+    assert client.get("/api/jobs?min_fit=90&applied=1").json()["total"] == 0
 
 
 def test_hours_window(client):
     conn = store.connect(client.db_path)
-    conn.execute("UPDATE job SET first_seen_at = '2020-01-01T00:00:00+00:00'")
+    conn.execute("UPDATE job SET posted_at = '2020-01-01T00:00:00+00:00'")
     conn.commit()
     conn.close()
     assert client.get("/api/jobs?hours=48").json()["total"] == 0
-    assert client.get("/api/jobs?hours=100000").json()["total"] == 3
+    # job 1 has an application, so it's excluded from the default listing.
+    assert client.get("/api/jobs?hours=100000").json()["total"] == 2
 
 
 def test_scored_and_unscored_are_distinguishable(client):
+    # job 1 has an application, so it no longer shows in the default listing.
+    job1 = client.get("/api/jobs/1").json()
+    assert job1["scored"] is True
+    assert job1["scores"]["fit"] == 84
+
     jobs = {j["id"]: j for j in client.get("/api/jobs").json()["jobs"]}
-    assert jobs[1]["scored"] is True
-    assert jobs[1]["scores"]["fit"] == 84
     assert jobs[2]["scored"] is False
     assert jobs[2]["scores"]["fit"] is None
 

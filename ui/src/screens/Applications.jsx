@@ -23,6 +23,13 @@ const STATUS_LABEL = {
 
 const FUNNEL_ORDER = ['drafting', 'applied', 'screening', 'interview', 'offer', 'rejected']
 
+function formatDate(iso) {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '-'
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
 export default function Applications() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
@@ -88,49 +95,71 @@ export default function Applications() {
       </Panel>
 
       <Panel title="Every application">
-        <div className="pbody">
-          {total === 0 ? (
+        {total === 0 ? (
+          <div className="pbody">
             <Empty title="Nothing tracked yet">
               Open a job, tailor a CV or write a cover letter, and save it. That
               starts tracking the application here automatically.
             </Empty>
-          ) : (
-            data.rows.map((row) => (
-              <div className="check" key={row.id} style={{ alignItems: 'center' }}>
-                <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <Link to={'/jobs/' + row.job_id} style={{ fontWeight: 500 }}>
-                    {row.title}
-                  </Link>
-                  <span className="muted">
-                    {[row.company_name, [row.city, row.country].filter(Boolean).join(', '),
-                      row.fit !== null ? 'match ' + row.fit : null,
-                      row.reach !== null ? 'chances ' + row.reach : null]
-                      .filter(Boolean).join(' | ')}
-                  </span>
-                </span>
-                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <Pill tone={STATUS_TONE[row.status] || 'slate'}>
-                    {STATUS_LABEL[row.status] || row.status}
-                  </Pill>
-                  <select
-                    value={row.status}
-                    disabled={busy === row.id}
-                    onChange={(e) => changeStatus(row, e.target.value)}
-                  >
-                    {FUNNEL_ORDER.map((s) => (
-                      <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-                    ))}
-                  </select>
-                  {row.url && (
-                    <a className="btn sm" href={row.url} target="_blank" rel="noreferrer">
-                      Open posting
-                    </a>
-                  )}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="atable-wrap">
+            <table className="atable">
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Company</th>
+                  <th>Country</th>
+                  <th>Applied</th>
+                  <th>Status</th>
+                  <th>Match</th>
+                  <th>Chances</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <Link to={'/jobs/' + row.job_id} style={{ fontWeight: 500 }}>
+                        {row.title}
+                      </Link>
+                      {row.city && <div className="muted">{row.city}</div>}
+                    </td>
+                    <td>{row.company_name || '-'}</td>
+                    <td>{row.country || '-'}</td>
+                    <td>{formatDate(row.applied_at)}</td>
+                    <td>
+                      <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <Pill tone={STATUS_TONE[row.status] || 'slate'}>
+                          {STATUS_LABEL[row.status] || row.status}
+                        </Pill>
+                        <select
+                          value={row.status}
+                          disabled={busy === row.id}
+                          onChange={(e) => changeStatus(row, e.target.value)}
+                        >
+                          {FUNNEL_ORDER.map((s) => (
+                            <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                          ))}
+                        </select>
+                      </span>
+                    </td>
+                    <td className="num">{row.fit !== null ? row.fit : '-'}</td>
+                    <td className="num">{row.reach !== null ? row.reach : '-'}</td>
+                    <td>
+                      {row.url && (
+                        <a className="btn sm" href={row.url} target="_blank" rel="noreferrer">
+                          Open posting
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Panel>
     </div>
   )

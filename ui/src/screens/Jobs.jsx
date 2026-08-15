@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { Empty, ErrorBox, Loading, Panel, Pill, Score, Toast } from '../components'
@@ -6,15 +6,16 @@ import { Empty, ErrorBox, Loading, Panel, Pill, Score, Toast } from '../componen
 const GATES = [
   ['passed', 'worth a look'],
   ['saved', 'saved jobs'],
+  ['applied', 'applied'],
   ['rejected', 'hidden as not relevant'],
-  ['pending', 'not checked yet'],
+  ['unrated', 'not rated yet'],
   ['', 'everything'],
 ]
 
 const WINDOWS = [
-  ['48', 'found in last 48 hours'],
-  ['24', 'found in last 24 hours'],
-  ['168', 'found in last 7 days'],
+  ['48', 'listed in 48 hours'],
+  ['24', 'listed in 24 hours'],
+  ['168', 'listed in 7 days'],
   ['', 'any time'],
 ]
 
@@ -29,6 +30,14 @@ const EMPLOYERS = [
   ['false', 'direct only'],
   ['true', 'agency only'],
 ]
+
+function ageLabel(job) {
+  if (job.posted_age === job.found_age) return job.posted_age
+  if (job.posted_age && job.found_age) {
+    return 'posted ' + job.posted_age + ', found ' + job.found_age
+  }
+  return job.posted_age || job.found_age
+}
 
 function pageWindow(current, total) {
   const pages = new Set([1, total, current, current - 1, current + 1])
@@ -77,8 +86,26 @@ export default function Jobs() {
   const [websites, setWebsites] = useState([])
   const [selected, setSelected] = useState(() => new Set())
   const [rating, setRating] = useState(null)
+  const [previewJob, setPreviewJob] = useState(null)
+  const previewCloseTimer = useRef(null)
 
   const PAGE_SIZE = 25
+
+  const openPreview = (id) => {
+    if (previewCloseTimer.current) {
+      clearTimeout(previewCloseTimer.current)
+      previewCloseTimer.current = null
+    }
+    setPreviewJob(id)
+  }
+
+  const scheduleClosePreview = () => {
+    previewCloseTimer.current = setTimeout(() => setPreviewJob(null), 250)
+  }
+
+  useEffect(() => () => {
+    if (previewCloseTimer.current) clearTimeout(previewCloseTimer.current)
+  }, [])
 
   const gate = params.get('gate') ?? 'passed'
   const hours = params.get('hours') ?? '48'
@@ -87,9 +114,12 @@ export default function Jobs() {
   const remote = params.get('remote') ?? ''
   const agency = params.get('agency') ?? ''
   const source = params.get('source') ?? ''
+  const band = params.get('band') ?? ''
   const page = Math.max(1, parseInt(params.get('page'), 10) || 1)
 
   const onlySaved = gate === 'saved'
+  const onlyApplied = gate === 'applied'
+  const onlyUnrated = gate === 'unrated'
 
   useEffect(() => {
     api.sources().then((d) => setWebsites(d.sources.map((s) => s.name))).catch(() => {})
@@ -99,14 +129,16 @@ export default function Jobs() {
     setData(null)
     api
       .jobs({
-        gate: onlySaved ? '' : gate,
+        gate: (onlySaved || onlyApplied) ? '' : (onlyUnrated ? 'passed' : gate),
         status: onlySaved ? 'shortlisted' : '',
-        hours: onlySaved ? '' : hours,
+        applied: onlyApplied ? '1' : '',
+        hours: (onlySaved || onlyApplied || onlyUnrated) ? '' : hours,
         country,
         min_fit: minFit,
         remote,
         agency,
         source,
+        band: onlyUnrated ? 'unrated' : band,
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
       })
@@ -114,12 +146,20 @@ export default function Jobs() {
       .catch(setError)
   }
 
-  useEffect(() => { load() }, [gate, hours, country, minFit, remote, agency, source, page])
-  useEffect(() => { setSelected(new Set()) }, [gate, hours, country, minFit, remote, agency, source, page])
+  useEffect(() => { load() }, [gate, hours, country, minFit, remote, agency, source, band, page])
+  useEffect(() => { setSelected(new Set()) }, [gate, hours, country, minFit, remote, agency, source, band, page])
 
   const set = (key, value) => {
     const next = new URLSearchParams(params)
     next.set(key, value)
+    next.delete('page')
+    if (key !== 'band') next.delete('band')
+    setParams(next)
+  }
+
+  const clearBand = () => {
+    const next = new URLSearchParams(params)
+    next.delete('band')
     next.delete('page')
     setParams(next)
   }
@@ -269,6 +309,17 @@ export default function Jobs() {
         )}
       </div>
 
+      {band && (
+        <div className="filters">
+          <Pill tone="amber">
+            Only: {(data && data.bands.find((b) => b.key === band)?.label) || band}
+          </Pill>
+          <button className="btn sm" onClick={clearBand}>
+            Show all bands
+          </button>
+        </div>
+      )}
+
       <div className="filters">
         <button className="btn sm" onClick={selectAllUnrated} disabled={!data || !!rating}>
           Select all unrated
@@ -296,6 +347,14 @@ export default function Jobs() {
 
       <ErrorBox error={error} />
 
+      {data && data.total > 0 && (
+        <Pager
+          page={page}
+          totalPages={Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+          onGo={goToPage}
+        />
+      )}
+
       {!data ? (
         <Loading />
       ) : data.jobs.length === 0 ? (
@@ -312,21 +371,26 @@ export default function Jobs() {
           )}
         </Panel>
       ) : (
-        data.bands.map((band) => {
-          const rows = data.jobs.filter((j) => j.band === band.key)
+        data.bands.map((bandInfo) => {
+          const rows = data.jobs.filter((j) => j.band === bandInfo.key)
           if (!rows.length) return null
           return (
-            <div key={band.key}>
+            <div key={bandInfo.key}>
               <div className="bandhead">
-                <h3 style={{ color: 'var(--' + band.tone + ')' }}>{band.label}</h3>
+                <h3 style={{ color: 'var(--' + bandInfo.tone + ')' }}>{bandInfo.label}</h3>
                 <span className="n">{rows.length}</span>
-                <p>{band.blurb}</p>
+                <p>{bandInfo.blurb}</p>
               </div>
-              <div className={'panel band-' + band.key}>
+              <div className={'panel band-' + bandInfo.key}>
                 {rows.map((job) => (
                   <div className={'jobwrap' + (job.saved ? ' saved' : '')} key={job.id}>
                     {job.requirements && (
-                      <div className="preview">
+                      <div
+                        className="preview"
+                        style={{ display: previewJob === job.id ? 'block' : 'none' }}
+                        onMouseEnter={() => openPreview(job.id)}
+                        onMouseLeave={scheduleClosePreview}
+                      >
                         <b>{job.title}</b>
                         {!job.requirements_found && (
                           <em className="fallback-note">
@@ -347,22 +411,31 @@ export default function Jobs() {
                     />
                     <Link className="job" to={'/jobs/' + job.id}>
                       <div className="body">
-                        <div className="t">
+                        <div
+                          className="t"
+                          onMouseEnter={() => openPreview(job.id)}
+                          onMouseLeave={scheduleClosePreview}
+                        >
                           {job.title}
                           {job.websites && job.websites[0] && (
                             <span className="pill p-slate" style={{ marginLeft: 8 }}>
                               {job.websites[0]}
                             </span>
                           )}
+                          {job.applied && (
+                            <span className="pill p-rust" style={{ marginLeft: 6 }}>
+                              Applied
+                            </span>
+                          )}
                         </div>
                         <div className="c">
                           {[job.company, [job.city, job.country].filter(Boolean).join(', '),
-                            job.posted_age].filter(Boolean).join(' · ')}
+                            ageLabel(job)].filter(Boolean).join(' · ')}
                         </div>
                         <div className="tags">
                           {job.saved && <Pill tone="pine">saved</Pill>}
                           {job.badges.map((b, i) => (
-                            <Pill key={i} tone={b.tone}>{b.text}</Pill>
+                            <Pill key={i} tone={b.tone} strong={b.strong}>{b.text}</Pill>
                           ))}
                         </div>
                       </div>
