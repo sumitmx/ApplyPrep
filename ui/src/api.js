@@ -71,6 +71,13 @@ export const api = {
   },
   masterCvDownloadUrl: (kind) => '/api/master-cv/' + kind + '/download',
   discardMasterCv: (kind) => request('/master-cv/' + kind, { method: 'DELETE' }),
+  extractSkills: (text) =>
+    request('/skills/extract', { method: 'POST', body: JSON.stringify({ text }) }),
+  saveSkills: (skills) =>
+    request('/skills', { method: 'POST', body: JSON.stringify({ skills }) }),
+  profileKpis: () => request('/profile/kpis'),
+  skillGaps: () => request('/profile/skill-gaps'),
+  refreshSkillGaps: () => request('/profile/skill-gaps/refresh', { method: 'POST' }),
   allDocuments: () => request('/documents'),
   documents: (id) => request('/documents/' + id),
   generateCv: (id) => request('/documents/' + id + '/cv', { method: 'POST' }),

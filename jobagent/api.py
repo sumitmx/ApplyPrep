@@ -39,6 +39,20 @@ class SettingsBody(BaseModel):
     ai_provider: str
 
 
+class SkillExtractBody(BaseModel):
+    text: str
+
+
+class SkillEntry(BaseModel):
+    name: str
+    tier: str
+    context: str | None = None
+
+
+class SaveSkillsBody(BaseModel):
+    skills: list[SkillEntry]
+
+
 def create_app(cfg=None):
     cfg = cfg or config.load()
     app = FastAPI(title="ApplyPrep", docs_url="/api/docs", redoc_url=None)
@@ -277,7 +291,7 @@ def create_app(cfg=None):
     @app.post("/api/master-cv/{kind}/upload")
     async def post_master_upload(kind: str, file: UploadFile = File(...)):
         if kind not in service.MASTER_UPLOAD_KINDS:
-            raise HTTPException(status_code=400, detail="kind must be cv or letter")
+            raise HTTPException(status_code=400, detail="kind must be cv")
         content = await file.read()
         if not content:
             raise HTTPException(status_code=400, detail="the file was empty")
@@ -291,7 +305,7 @@ def create_app(cfg=None):
     @app.get("/api/master-cv/{kind}/download")
     def get_master_download(kind: str):
         if kind not in service.MASTER_UPLOAD_KINDS:
-            raise HTTPException(status_code=400, detail="kind must be cv or letter")
+            raise HTTPException(status_code=400, detail="kind must be cv")
         path = service.master_upload_path(cfg.get("documents_dir", "documents"), kind)
         if not path or not path.exists():
             raise HTTPException(status_code=404, detail="nothing uploaded yet")
@@ -300,11 +314,74 @@ def create_app(cfg=None):
     @app.delete("/api/master-cv/{kind}")
     def delete_master_upload(kind: str):
         if kind not in service.MASTER_UPLOAD_KINDS:
-            raise HTTPException(status_code=400, detail="kind must be cv or letter")
+            raise HTTPException(status_code=400, detail="kind must be cv")
         removed = service.discard_master_upload(cfg.get("documents_dir", "documents"), kind)
         if not removed:
             raise HTTPException(status_code=404, detail="nothing uploaded yet")
         return {"kind": kind, "discarded": True}
+
+    @app.post("/api/skills/extract")
+    def post_extract_skills(body: SkillExtractBody):
+        if not body.text.strip():
+            raise HTTPException(status_code=400, detail="nothing to extract from")
+        conn = db()
+        try:
+            _require_agent(conn)
+            skills = service.extract_skills(conn, master(), body.text)
+        except HTTPException:
+            raise
+        except agent.AgentError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        finally:
+            conn.close()
+        return {"skills": skills}
+
+    @app.post("/api/skills")
+    def post_save_skills(body: SaveSkillsBody):
+        if not body.skills:
+            raise HTTPException(status_code=400, detail="nothing to save")
+        return service.save_skills(
+            master(), cfg.get("master_path", "master.yaml"),
+            [s.model_dump() for s in body.skills],
+        )
+
+    @app.get("/api/profile/kpis")
+    def get_profile_kpis():
+        conn = db()
+        try:
+            loaded = master()
+            return {
+                "skill_demand": service.skill_demand(conn, loaded),
+                "freshness": service.profile_freshness(
+                    conn, cfg.get("master_path", "master.yaml")
+                ),
+                "bullet_usage": service.bullet_usage(conn, loaded),
+                "sponsorship_mix": service.sponsorship_mix(conn),
+                "keyword_coverage": service.keyword_coverage(conn),
+            }
+        finally:
+            conn.close()
+
+    @app.get("/api/profile/skill-gaps")
+    def get_skill_gaps():
+        conn = db()
+        try:
+            return service.skill_gaps(conn, master())
+        finally:
+            conn.close()
+
+    @app.post("/api/profile/skill-gaps/refresh")
+    def post_skill_gaps_refresh():
+        conn = db()
+        try:
+            _require_agent(conn)
+            return service.refresh_skill_gaps(conn, master())
+        except HTTPException:
+            raise
+        except agent.AgentError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        finally:
+            conn.close()
 
     @app.get("/api/documents")
     def get_all_documents():

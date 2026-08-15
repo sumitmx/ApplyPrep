@@ -7,7 +7,7 @@ import Discover from './screens/Discover'
 import JobDetail from './screens/JobDetail'
 import Jobs from './screens/Jobs'
 import Letter from './screens/Letter'
-import MyCV from './screens/MyCV'
+import Profile from './screens/Profile'
 import Tailor from './screens/Tailor'
 
 const NAV = [
@@ -15,7 +15,7 @@ const NAV = [
   ['/jobs', 'Jobs'],
   ['/discover', 'Where jobs come from'],
   ['/applications', 'Applications'],
-  ['/my-cv', 'My CV'],
+  ['/profile', 'My Profile'],
 ]
 
 function usePersistedTheme() {
@@ -118,7 +118,7 @@ export default function App() {
           <Route path="/jobs/:id/tailor" element={<Tailor />} />
           <Route path="/jobs/:id/letter" element={<Letter />} />
           <Route path="/applications" element={<Applications />} />
-          <Route path="/my-cv" element={<MyCV />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>

@@ -95,7 +95,7 @@ export default function Dashboard() {
 
   const tierRows = TIER_ROWS.map((t) => ({
     ...t, value: masterCv && masterCv.tiers ? (masterCv.tiers[t.key] || []).length : 0,
-    href: '/my-cv',
+    href: '/profile',
   }))
 
   return (
@@ -224,7 +224,7 @@ export default function Dashboard() {
           </div>
         </Panel>
 
-        <Panel title="My CV coverage" note="click to open My CV">
+        <Panel title="My CV coverage" note="click to open My Profile">
           <div className="pbody">
             {masterCv ? (
               masterCv.available ? (
@@ -232,7 +232,7 @@ export default function Dashboard() {
               ) : (
                 <Empty
                   title="No master CV set up yet"
-                  actions={<Link className="btn sm" to="/my-cv">Set it up</Link>}
+                  actions={<Link className="btn sm" to="/profile">Set it up</Link>}
                 >
                   Add your CV so tailoring and this breakdown have something to work with.
                 </Empty>

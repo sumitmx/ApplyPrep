@@ -278,3 +278,78 @@ def test_accept_rejects_unknown_kind(client):
 def test_no_scoring_or_tailoring_routes(client):
     assert client.post("/api/score", json={}).status_code in (404, 405)
     assert client.post("/api/tailor", json={}).status_code in (404, 405)
+
+
+def test_master_cv_uploads_only_offers_cv(client):
+    body = client.get("/api/master-cv").json()
+    assert set(body["uploads"].keys()) == {"cv"}
+
+
+def test_master_upload_rejects_letter_kind(client):
+    files = {"file": ("resume.txt", b"hello", "text/plain")}
+    resp = client.post("/api/master-cv/letter/upload", files=files)
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "kind must be cv"
+
+
+def test_master_cv_preview_is_not_truncated(tmp_path):
+    cfg = config.load("does-not-exist.yaml")
+    cfg["db_path"] = str(tmp_path / "test.db")
+    cfg["master_path"] = str(tmp_path / "master.yaml")
+    cfg["documents_dir"] = str(tmp_path / "documents")
+    conn = store.connect(cfg["db_path"])
+    store.init(conn)
+    conn.close()
+    tc = TestClient(api.create_app(cfg))
+
+    long_text = "Experienced engineer." + (" Experienced engineer." * 199)
+    assert len(long_text) > 1500
+    files = {"file": ("resume.txt", long_text.encode("utf-8"), "text/plain")}
+    tc.post("/api/master-cv/cv/upload", files=files)
+
+    body = tc.get("/api/master-cv").json()
+    preview = body["uploads"]["cv"]["preview"]
+    assert preview == long_text
+    assert body["uploads"]["cv"]["preview_truncated"] is False
+
+
+def test_extract_skills_requires_agent(client, monkeypatch):
+    monkeypatch.setattr(api.agent, "available", lambda *a, **k: False)
+    resp = client.post("/api/skills/extract", json={"text": "I know Python"})
+    assert resp.status_code == 503
+
+
+def test_extract_skills_rejects_empty_text(client):
+    resp = client.post("/api/skills/extract", json={"text": "   "})
+    assert resp.status_code == 400
+
+
+def test_save_skills_persists_and_dedups(client):
+    resp = client.post("/api/skills", json={
+        "skills": [{"name": "Kubernetes", "tier": "working", "context": "2 years"}],
+    })
+    assert resp.status_code == 200
+    assert resp.json()["added"] == [{"name": "Kubernetes", "tier": "working"}]
+
+    again = client.post("/api/skills", json={
+        "skills": [{"name": "kubernetes", "tier": "working"}],
+    })
+    assert again.json()["skipped"] == [{"name": "kubernetes", "reason": "duplicate"}]
+
+
+def test_save_skills_rejects_empty_list(client):
+    assert client.post("/api/skills", json={"skills": []}).status_code == 400
+
+
+def test_profile_kpis_works_without_master(client):
+    body = client.get("/api/profile/kpis").json()
+    assert body["skill_demand"] == []
+    assert body["freshness"] == {"available": False}
+    assert body["bullet_usage"] == {"documents_considered": 0, "bullets": []}
+
+
+def test_skill_gaps_starts_empty_and_refresh_requires_agent(client, monkeypatch):
+    cached = client.get("/api/profile/skill-gaps").json()
+    assert cached == {"computed_at": None, "gaps": []}
+    monkeypatch.setattr(api.agent, "available", lambda *a, **k: False)
+    assert client.post("/api/profile/skill-gaps/refresh").status_code == 503

@@ -7,8 +7,9 @@ from . import agent
 from . import chat as chat_module
 from . import dedup as dedup_module
 from . import documents as documents_module
-from . import profile, rating, store
+from . import profile, rating, skills as skills_module, store
 from .documents import render
+from .documents.guard import known_bullets
 
 MARK_ACTIONS = {
     "shortlist": "shortlisted",
@@ -1019,7 +1020,7 @@ def master_cv(master=None):
     }
 
 
-MASTER_UPLOAD_KINDS = ("cv", "letter")
+MASTER_UPLOAD_KINDS = ("cv",)
 MASTER_UPLOAD_EXTENSIONS = (".pdf", ".docx", ".doc", ".txt", ".md", ".rtf")
 
 
@@ -1076,9 +1077,6 @@ def save_master_upload(documents_dir, kind, filename, content):
     return meta
 
 
-MASTER_PREVIEW_CHARS = 1500
-
-
 def master_upload_info(documents_dir, kind):
     folder = _master_upload_dir(documents_dir)
     meta_path = folder / (kind + ".meta.json")
@@ -1093,9 +1091,8 @@ def master_upload_info(documents_dir, kind):
     meta["has_file"] = bool(stored and stored.exists())
     text_path = folder / (kind + ".txt")
     if text_path.exists():
-        text = text_path.read_text(encoding="utf-8")
-        meta["preview"] = text[:MASTER_PREVIEW_CHARS]
-        meta["preview_truncated"] = len(text) > MASTER_PREVIEW_CHARS
+        meta["preview"] = text_path.read_text(encoding="utf-8")
+        meta["preview_truncated"] = False
     else:
         meta["preview"] = None
         meta["preview_truncated"] = False
@@ -1116,3 +1113,196 @@ def discard_master_upload(documents_dir, kind):
     for p in matches:
         p.unlink()
     return bool(matches)
+
+
+def extract_skills(conn, master, text, timeout=None):
+    kwargs = {"timeout": timeout} if timeout else {}
+    existing = profile.existing_names(master)
+    return skills_module.extract(text, existing, provider=get_ai_provider(conn), **kwargs)
+
+
+def save_skills(master, master_path, entries):
+    additions, added, skipped = skills_module.merge(master, entries)
+    if added:
+        profile.append_skills(master_path, additions)
+    updated = profile.load_master(master_path) or master
+    return {
+        "tiers": profile.skill_tiers(updated),
+        "added": added,
+        "skipped": skipped,
+    }
+
+
+SKILL_GAP_KEY = "skill_gap_cache"
+
+
+def _recent_posting_text(conn, limit=20):
+    rows = conn.execute(
+        "SELECT title, company_name, description FROM job"
+        " WHERE gate_status = 'passed' AND description IS NOT NULL"
+        " ORDER BY posted_at DESC LIMIT ?", (limit,)
+    ).fetchall()
+    parts = []
+    for row in rows:
+        parts.append(
+            "### " + (row["title"] or "") + " at " + (row["company_name"] or "") + "\n"
+            + (row["description"] or "")[:1200]
+        )
+    return "\n\n".join(parts)
+
+
+def skill_gaps(conn, master):
+    cached = store.get_setting(conn, SKILL_GAP_KEY)
+    if not cached:
+        return {"computed_at": None, "gaps": []}
+    return json.loads(cached)
+
+
+def refresh_skill_gaps(conn, master, timeout=None):
+    postings = _recent_posting_text(conn)
+    existing = profile.existing_names(master)
+    kwargs = {"timeout": timeout} if timeout else {}
+    gaps = skills_module.find_gaps(postings, existing, provider=get_ai_provider(conn), **kwargs)
+    result = {"computed_at": now().isoformat(timespec="seconds"), "gaps": gaps}
+    store.set_setting(conn, SKILL_GAP_KEY, json.dumps(result))
+    return result
+
+
+def skill_demand(conn, master, sample=500, top=12):
+    tiers = profile.skill_tiers(master)
+    entries = [
+        {"name": item["name"], "tier": tier}
+        for tier, items in tiers.items() for item in items
+    ]
+    if not entries:
+        return []
+    rows = conn.execute(
+        "SELECT description FROM job WHERE description IS NOT NULL"
+        " ORDER BY posted_at DESC LIMIT ?", (sample,)
+    ).fetchall()
+    counts = {e["name"]: 0 for e in entries}
+    for row in rows:
+        matched = profile.match_skills(master, row["description"])
+        for tier_matches in matched.values():
+            for m in tier_matches:
+                if m["name"] in counts:
+                    counts[m["name"]] += 1
+    tone = {"core": "pine", "working": "mint", "familiar": "slate"}
+    ranked = sorted(entries, key=lambda e: counts[e["name"]], reverse=True)
+    return [
+        {"key": e["name"], "label": e["name"], "tone": tone[e["tier"]], "value": counts[e["name"]]}
+        for e in ranked[:top]
+    ]
+
+
+def profile_freshness(conn, master_path):
+    path = Path(master_path)
+    if not path.exists():
+        return {"available": False}
+    mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    since_iso = mtime.isoformat(timespec="seconds")
+    jobs_rated_since = conn.execute(
+        "SELECT COUNT(*) AS n FROM score WHERE scored_at >= ?", (since_iso,)
+    ).fetchone()["n"]
+    return {
+        "available": True,
+        "updated_at": since_iso,
+        "days_since": (now() - mtime).days,
+        "jobs_rated_since": jobs_rated_since,
+    }
+
+
+def bullet_usage(conn, master):
+    known = known_bullets(master)
+    rows = conn.execute(
+        "SELECT payload FROM document WHERE kind = 'cv' AND payload IS NOT NULL"
+    ).fetchall()
+    tally = {}
+    considered = 0
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"])
+        except ValueError:
+            continue
+        changes = payload.get("changes") or []
+        if not changes:
+            continue
+        considered += 1
+        for change in changes:
+            bullet_id = change.get("id")
+            action = change.get("action")
+            if not bullet_id or bullet_id not in known:
+                continue
+            entry = tally.setdefault(bullet_id, {"kept": 0, "dropped": 0, "total": 0})
+            entry["total"] += 1
+            if action == "dropped":
+                entry["dropped"] += 1
+            else:
+                entry["kept"] += 1
+    bullets = []
+    for bullet_id, counts in tally.items():
+        if counts["total"] < 2:
+            continue
+        info = known[bullet_id]
+        bullets.append({
+            "id": bullet_id,
+            "text": info["text"],
+            "company": info["company"],
+            "kept": counts["kept"],
+            "dropped": counts["dropped"],
+            "total": counts["total"],
+            "drop_rate": round(counts["dropped"] / counts["total"] * 100),
+        })
+    bullets.sort(key=lambda b: b["drop_rate"], reverse=True)
+    return {"documents_considered": considered, "bullets": bullets[:8]}
+
+
+def sponsorship_mix(conn):
+    rows = conn.execute(
+        "SELECT job.sponsorship_status AS status, COUNT(*) AS n FROM job"
+        " LEFT JOIN application ON application.job_id = job.id"
+        " WHERE job.gate_status = 'passed' AND job.status NOT IN ('hidden', 'rejected')"
+        " AND application.applied_at IS NULL"
+        " GROUP BY job.sponsorship_status"
+    ).fetchall()
+    counts = {"confirmed": 0, "unknown": 0, "denied": 0}
+    for row in rows:
+        key = row["status"] if row["status"] in counts else "unknown"
+        counts[key] += row["n"]
+    tone = {"confirmed": "pine", "unknown": "amber", "denied": "rust"}
+    label = {"confirmed": "Confirmed", "unknown": "Unknown", "denied": "Denied"}
+    return [
+        {"key": key, "label": label[key], "tone": tone[key], "value": counts[key]}
+        for key in ("confirmed", "unknown", "denied")
+    ]
+
+
+def keyword_coverage(conn, sample=10):
+    rows = conn.execute(
+        "SELECT document.job_id, document.payload, document.created_at,"
+        " job.title, job.company_name FROM document"
+        " JOIN job ON job.id = document.job_id"
+        " WHERE document.kind = 'cv' AND document.payload IS NOT NULL"
+        " ORDER BY document.created_at DESC LIMIT ?", (sample,)
+    ).fetchall()
+    jobs = []
+    percentages = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"])
+        except ValueError:
+            continue
+        counts = (payload.get("keywords") or {}).get("counts") or {}
+        total = counts.get("covered", 0) + counts.get("fixable", 0) + counts.get("real_gap", 0)
+        if not total:
+            continue
+        pct = round(counts.get("covered", 0) / total * 100)
+        percentages.append(pct)
+        jobs.append({
+            "key": str(row["job_id"]),
+            "label": (row["title"] or "") + " @ " + (row["company_name"] or ""),
+            "tone": "pine" if pct >= 66 else ("amber" if pct >= 40 else "rust"),
+            "value": pct,
+        })
+    average = round(sum(percentages) / len(percentages)) if percentages else None
+    return {"average": average, "jobs": jobs}
