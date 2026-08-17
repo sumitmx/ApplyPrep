@@ -142,7 +142,8 @@ a{color:inherit;text-decoration:none}
 
 .panel{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);margin-bottom:14px}
 .panel h3{font-size:13px;padding:12px 16px;border-bottom:1px solid var(--line);font-weight:500;
-  display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  background:var(--pine-bg);border-radius:var(--r) var(--r) 0 0}
 .panel h3>span{color:var(--pine);font-weight:600}
 .panel h3 small{color:var(--ink-3);font-weight:400;font-size:11px}
 .pbody{padding:14px 16px}
@@ -333,6 +334,15 @@ a{color:inherit;text-decoration:none}
 }
 .chatmsg.user{align-self:flex-end;background:var(--shell);color:#fff}
 .chatmsg.ai{align-self:flex-start;background:var(--slate-bg);color:var(--ink)}
+.chatpresets{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.chatpreset{
+  all:unset;cursor:pointer;font-size:12.5px;padding:8px 11px;border-radius:var(--r);
+  border:1px solid var(--line);background:var(--pine-bg);color:var(--pine);
+  line-height:1.4;
+}
+.chatpreset:hover{opacity:.82}
+.chatpreset:disabled{cursor:default;opacity:.5}
+.chatpreset:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
 .chatinput{
   display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);
 }

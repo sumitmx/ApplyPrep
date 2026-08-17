@@ -190,6 +190,13 @@ export function ErrorBox({ error }) {
   return <div className="err">{String(error.message || error)}</div>
 }
 
+const ASK_PRESETS = [
+  'Summarize the job advert in headers and bullets',
+  'Is it a freelance work?',
+  'Is Visa sponsorship available?',
+  'Is remote mode available?',
+]
+
 export function AskAIChat({ jobId, jobTitle, onClose }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -208,8 +215,7 @@ export function AskAIChat({ jobId, jobTitle, onClose }) {
 
   const current = settings && settings.options.find((o) => o.key === settings.current)
 
-  const send = async () => {
-    const question = input.trim()
+  const ask = async (question) => {
     if (!question || busy) return
     const history = messages.map(({ role, content }) => ({ role, content }))
     setMessages((m) => [...m, { role: 'user', content: question }])
@@ -225,6 +231,8 @@ export function AskAIChat({ jobId, jobTitle, onClose }) {
       setBusy(false)
     }
   }
+
+  const send = () => ask(input.trim())
 
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -250,10 +258,24 @@ export function AskAIChat({ jobId, jobTitle, onClose }) {
         </div>
         <div className="chatbody" ref={bodyRef}>
           {messages.length === 0 && (
-            <p className="muted" style={{ fontSize: 13 }}>
-              Ask anything about this job, the posting text, whether a badge looks
-              wrong, how you match up. It only knows this one job.
-            </p>
+            <>
+              <p className="muted" style={{ fontSize: 13 }}>
+                Ask anything about this job, the posting text, whether a badge looks
+                wrong, how you match up. It only knows this one job.
+              </p>
+              <div className="chatpresets">
+                {ASK_PRESETS.map((q) => (
+                  <button
+                    key={q}
+                    className="chatpreset"
+                    onClick={() => ask(q)}
+                    disabled={busy}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
           {messages.map((m, i) => (
             <div className={'chatmsg ' + (m.role === 'user' ? 'user' : 'ai')} key={i}>

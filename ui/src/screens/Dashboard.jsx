@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { Bar, BarList, Card, Donut, Empty, ErrorBox, Legend, Loading, Panel } from '../components'
+import { BarList, Card, Donut, Empty, ErrorBox, Legend, Loading, Panel } from '../components'
 
 function periodLabel(hours) {
   if (hours % 24 === 0) {
@@ -72,8 +72,16 @@ export default function Dashboard() {
   if (error && !data) return <ErrorBox error={error} />
   if (!data) return <Loading />
 
-  const bands = data.response_by_band || []
-  const noApplications = bands.every((b) => b.sent === 0)
+  const gateTotal = Object.values(data.gate_counts || {}).reduce((a, b) => a + b, 0)
+  const worthALook = (data.cards.find((c) => c.key === 'Worth a look') || {}).value || 0
+  const appliedMonth = (data.cards.find((c) => c.key === 'Applied this month') || {}).value || 0
+
+  const searchFunnelRows = [
+    { key: 'pulled', label: 'Pulled, all time', tone: 'slate', value: gateTotal },
+    { key: 'passed', label: 'Passed the gate', tone: 'mint', value: (data.gate_counts || {}).passed || 0 },
+    { key: 'worth', label: 'Worth a look now', tone: 'pine', value: worthALook },
+    { key: 'applied', label: 'Applied this month', tone: 'amber', value: appliedMonth },
+  ]
 
   const bandSegments = (data.bands || []).map((b) => ({
     key: b.key, label: b.label, tone: b.tone,
@@ -148,51 +156,11 @@ export default function Dashboard() {
         })}
       </div>
 
-      <div className="two">
-        <Panel title="How often you hear back" note="by how good the match was">
-          <div className="pbody">
-            {noApplications ? (
-              <Empty title="You have not applied to anything yet">
-                Once you start applying, this shows whether the strong matches
-                really do get more replies than the weaker ones. If both lines end
-                up the same, the ratings are not telling you anything useful.
-              </Empty>
-            ) : (
-              bands.map((b) => (
-                <div key={b.label}>
-                  <div className="dim">
-                    <span>{b.label}</span>
-                    <span>
-                      {b.rate === null
-                        ? 'none sent yet'
-                        : b.replied + ' replies out of ' + b.sent + ' sent'}
-                    </span>
-                  </div>
-                  <Bar value={b.rate || 0} tone={b.rate !== null && b.rate < 15 ? 'amber' : null} />
-                </div>
-              ))
-            )}
-          </div>
-        </Panel>
-
-        <Panel title="What to do next">
-          <div className="pbody">
-            {data.next_actions.map((a, i) => (
-              <div className="check" key={i}>
-                <span>{a.text}</span>
-                <span className={a.tone === 'no' ? 'no' : 'ok'}>{a.state}</span>
-              </div>
-            ))}
-            <p className="muted" style={{ marginTop: 11 }}>
-              Rating jobs and writing CVs happens in Claude chat, not on this page.{' '}
-              <Link to="/jobs" style={{ textDecoration: 'underline' }}>
-                See the jobs worth a look
-              </Link>
-              .
-            </p>
-          </div>
-        </Panel>
-      </div>
+      <Panel title="Your search funnel" note="from every posting pulled to what you've applied to">
+        <div className="pbody">
+          <BarList rows={searchFunnelRows} emptyText="Pull some jobs first" />
+        </div>
+      </Panel>
 
       <div className="two">
         <Panel title="Jobs by fit" note="click a band to see those jobs">
