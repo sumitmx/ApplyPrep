@@ -25,14 +25,8 @@ class PullBody(BaseModel):
     since_days: int | None = None
 
 
-class ChatTurn(BaseModel):
-    role: str
-    content: str
-
-
 class AskBody(BaseModel):
     question: str
-    history: list[ChatTurn] | None = None
 
 
 class SettingsBody(BaseModel):
@@ -206,6 +200,14 @@ def create_app(cfg=None):
             raise HTTPException(status_code=404, detail="job not found")
         return result
 
+    @app.get("/api/jobs/{job_id}/chat")
+    def get_job_chat(job_id: int):
+        conn = db()
+        try:
+            return {"messages": service.job_chat(conn, job_id)}
+        finally:
+            conn.close()
+
     @app.post("/api/jobs/{job_id}/ask")
     def post_ask(job_id: int, body: AskBody):
         if not body.question.strip():
@@ -213,10 +215,7 @@ def create_app(cfg=None):
         conn = db()
         try:
             _require_agent(conn)
-            history = [t.model_dump() for t in (body.history or [])]
-            answer = service.ask_about_job(
-                conn, job_id, master(), body.question, history,
-            )
+            answer = service.ask_about_job(conn, job_id, master(), body.question)
         except HTTPException:
             raise
         except agent.AgentError as exc:

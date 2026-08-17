@@ -867,14 +867,25 @@ def rate_estimate(conn, job_id, master, user_profile, kind, timeout=None):
     return job_detail(conn, job_id, master)
 
 
-def ask_about_job(conn, job_id, master, question, history=None, timeout=None):
+def job_chat(conn, job_id):
+    return store.get_chat(conn, job_id)
+
+
+def ask_about_job(conn, job_id, master, question, timeout=None):
     brief = job_brief(conn, job_id, master,
                        description_chars=chat_module.MAX_DESCRIPTION_CHARS)
     if brief is None:
         return None
+    history = store.get_chat(conn, job_id)
     kwargs = {"timeout": timeout} if timeout else {}
-    return chat_module.ask(brief, history or [], question,
-                            provider=get_ai_provider(conn), **kwargs)
+    answer = chat_module.ask(brief, history, question,
+                              provider=get_ai_provider(conn), **kwargs)
+    history = history + [
+        {"role": "user", "content": question},
+        {"role": "assistant", "content": answer},
+    ]
+    store.save_chat(conn, job_id, history)
+    return answer
 
 
 def generate_cv(conn, job_id, master, timeout=None):

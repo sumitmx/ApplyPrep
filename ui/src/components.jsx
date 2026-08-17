@@ -199,6 +199,7 @@ const ASK_PRESETS = [
 
 export function AskAIChat({ jobId, jobTitle, onClose }) {
   const [messages, setMessages] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(true)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -213,17 +214,24 @@ export function AskAIChat({ jobId, jobTitle, onClose }) {
     api.getSettings().then(setSettings).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    setLoadingHistory(true)
+    api.jobChat(jobId)
+      .then((res) => setMessages(res.messages || []))
+      .catch(() => setMessages([]))
+      .finally(() => setLoadingHistory(false))
+  }, [jobId])
+
   const current = settings && settings.options.find((o) => o.key === settings.current)
 
   const ask = async (question) => {
     if (!question || busy) return
-    const history = messages.map(({ role, content }) => ({ role, content }))
     setMessages((m) => [...m, { role: 'user', content: question }])
     setInput('')
     setBusy(true)
     setError(null)
     try {
-      const res = await api.askJob(jobId, question, history)
+      const res = await api.askJob(jobId, question)
       setMessages((m) => [...m, { role: 'assistant', content: res.answer }])
     } catch (e) {
       setError(e)
@@ -257,7 +265,8 @@ export function AskAIChat({ jobId, jobTitle, onClose }) {
           <button className="chatx" onClick={onClose} aria-label="Close">x</button>
         </div>
         <div className="chatbody" ref={bodyRef}>
-          {messages.length === 0 && (
+          {loadingHistory && <p className="muted" style={{ fontSize: 13 }}>Loading...</p>}
+          {!loadingHistory && messages.length === 0 && (
             <>
               <p className="muted" style={{ fontSize: 13 }}>
                 Ask anything about this job, the posting text, whether a badge looks

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from jobagent import api, config, store
+from jobagent import api, chat as chat_module, config, store
 
 
 @pytest.fixture
@@ -353,3 +353,31 @@ def test_skill_gaps_starts_empty_and_refresh_requires_agent(client, monkeypatch)
     assert cached == {"computed_at": None, "gaps": []}
     monkeypatch.setattr(api.agent, "available", lambda *a, **k: False)
     assert client.post("/api/profile/skill-gaps/refresh").status_code == 503
+
+
+def test_job_chat_starts_empty(client):
+    assert client.get("/api/jobs/1/chat").json() == {"messages": []}
+
+
+def test_ask_persists_chat_and_is_readable_via_chat_endpoint(client, monkeypatch):
+    monkeypatch.setattr(chat_module.agent, "run", lambda *a, **k: "Here is the answer.")
+
+    resp = client.post("/api/jobs/1/ask", json={"question": "What does this role pay?"})
+    assert resp.status_code == 200
+    assert resp.json()["answer"] == "Here is the answer."
+
+    chat = client.get("/api/jobs/1/chat").json()["messages"]
+    assert chat == [
+        {"role": "user", "content": "What does this role pay?"},
+        {"role": "assistant", "content": "Here is the answer."},
+    ]
+
+    # a second question appends rather than overwriting
+    client.post("/api/jobs/1/ask", json={"question": "And the location?"})
+    chat = client.get("/api/jobs/1/chat").json()["messages"]
+    assert len(chat) == 4
+    assert chat[2] == {"role": "user", "content": "And the location?"}
+
+
+def test_ask_rejects_empty_question(client):
+    assert client.post("/api/jobs/1/ask", json={"question": "  "}).status_code == 400

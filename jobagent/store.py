@@ -72,6 +72,23 @@ def set_setting(conn, key, value):
     conn.commit()
 
 
+def get_chat(conn, job_id):
+    row = conn.execute(
+        "SELECT messages FROM job_chat WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    return json.loads(row["messages"]) if row else []
+
+
+def save_chat(conn, job_id, messages):
+    conn.execute(
+        "INSERT INTO job_chat (job_id, messages, updated_at) VALUES (?, ?, ?)"
+        " ON CONFLICT(job_id) DO UPDATE SET messages = excluded.messages,"
+        " updated_at = excluded.updated_at",
+        (job_id, json.dumps(messages), now()),
+    )
+    conn.commit()
+
+
 def source_id(conn, name, kind):
     cur = conn.execute("SELECT id FROM source WHERE name = ?", (name,))
     row = cur.fetchone()

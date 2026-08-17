@@ -48,10 +48,11 @@ export const api = {
       body: JSON.stringify({ status, note: note || null }),
     }),
   startApplication: (jobId) => request('/jobs/' + jobId + '/apply', { method: 'POST' }),
-  askJob: (jobId, question, history) =>
+  jobChat: (jobId) => request('/jobs/' + jobId + '/chat'),
+  askJob: (jobId, question) =>
     request('/jobs/' + jobId + '/ask', {
       method: 'POST',
-      body: JSON.stringify({ question, history: history || [] }),
+      body: JSON.stringify({ question }),
     }),
   masterCv: () => request('/master-cv'),
   uploadMasterCv: async (kind, file) => {

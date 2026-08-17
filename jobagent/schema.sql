@@ -119,6 +119,12 @@ CREATE TABLE IF NOT EXISTS setting (
     value       TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS job_chat (
+    job_id      INTEGER PRIMARY KEY REFERENCES job(id),
+    messages    TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS run_log (
     id              INTEGER PRIMARY KEY,
     started_at      TEXT NOT NULL,
