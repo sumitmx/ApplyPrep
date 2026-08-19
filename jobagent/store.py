@@ -45,6 +45,32 @@ def migrate(conn):
     conn.execute(
         "CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
     )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS application_email ("
+        " id INTEGER PRIMARY KEY,"
+        " application_id INTEGER REFERENCES application(id),"
+        " gmail_message_id TEXT NOT NULL UNIQUE,"
+        " gmail_thread_id TEXT,"
+        " subject TEXT,"
+        " sender TEXT,"
+        " sender_domain TEXT,"
+        " snippet TEXT,"
+        " received_at TEXT,"
+        " created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_application_email_app"
+        " ON application_email(application_id)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS gmail_sync_log ("
+        " id INTEGER PRIMARY KEY,"
+        " started_at TEXT NOT NULL,"
+        " finished_at TEXT,"
+        " messages_scanned INTEGER DEFAULT 0,"
+        " stored_count INTEGER DEFAULT 0,"
+        " detail TEXT)"
+    )
     for table, columns in ADDED_COLUMNS.items():
         cur = conn.execute("PRAGMA table_info(" + table + ")")
         existing = {r["name"] for r in cur.fetchall()}
@@ -114,6 +140,51 @@ def finish_run(conn, run_id, raw_count, new_count, detail):
     conn.execute(
         "UPDATE run_log SET finished_at = ?, raw_count = ?, new_count = ?, detail = ? WHERE id = ?",
         (now(), raw_count, new_count, json.dumps(detail), run_id),
+    )
+    conn.commit()
+
+
+def start_gmail_sync(conn):
+    cur = conn.execute(
+        "INSERT INTO gmail_sync_log (started_at) VALUES (?)", (now(),)
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def finish_gmail_sync(conn, sync_id, messages_scanned, stored_count, detail):
+    conn.execute(
+        "UPDATE gmail_sync_log SET finished_at = ?, messages_scanned = ?,"
+        " stored_count = ?, detail = ? WHERE id = ?",
+        (now(), messages_scanned, stored_count, json.dumps(detail), sync_id),
+    )
+    conn.commit()
+
+
+def known_gmail_message_ids(conn):
+    return {
+        row["gmail_message_id"]
+        for row in conn.execute("SELECT gmail_message_id FROM application_email")
+    }
+
+
+def save_application_email(conn, message):
+    conn.execute(
+        "INSERT INTO application_email (application_id, gmail_message_id,"
+        " gmail_thread_id, subject, sender, sender_domain, snippet, received_at,"
+        " created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        " ON CONFLICT (gmail_message_id) DO NOTHING",
+        (
+            message.get("application_id"),
+            message["gmail_message_id"],
+            message.get("gmail_thread_id"),
+            message.get("subject"),
+            message.get("sender"),
+            message.get("sender_domain"),
+            message.get("snippet"),
+            message.get("received_at"),
+            now(),
+        ),
     )
     conn.commit()
 

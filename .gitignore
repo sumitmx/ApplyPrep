@@ -7,5 +7,6 @@ jobs.db*
 /documents/
 config.local.yaml
 session.log
+gmail_client_secret*.json
 node_modules/
 dist/

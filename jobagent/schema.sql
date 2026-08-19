@@ -135,3 +135,26 @@ CREATE TABLE IF NOT EXISTS run_log (
     new_count       INTEGER DEFAULT 0,
     detail          TEXT
 );
+
+CREATE TABLE IF NOT EXISTS application_email (
+    id                INTEGER PRIMARY KEY,
+    application_id    INTEGER REFERENCES application(id),
+    gmail_message_id  TEXT NOT NULL UNIQUE,
+    gmail_thread_id   TEXT,
+    subject           TEXT,
+    sender            TEXT,
+    sender_domain     TEXT,
+    snippet           TEXT,
+    received_at       TEXT,
+    created_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_application_email_app ON application_email(application_id);
+
+CREATE TABLE IF NOT EXISTS gmail_sync_log (
+    id                 INTEGER PRIMARY KEY,
+    started_at         TEXT NOT NULL,
+    finished_at        TEXT,
+    messages_scanned   INTEGER DEFAULT 0,
+    stored_count       INTEGER DEFAULT 0,
+    detail             TEXT
+);

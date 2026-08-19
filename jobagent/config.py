@@ -62,6 +62,11 @@ DEFAULTS = {
         "ashby": {"enabled": True, "region_filter": True, "pause_seconds": 0.4},
         "workable": {"enabled": True, "region_filter": True, "pause_seconds": 1.0},
     },
+    "gmail": {
+        "enabled": False,
+        "client_secret_path": "gmail_client_secret.json",
+        "lookback_days": 90,
+    },
 }
 
 

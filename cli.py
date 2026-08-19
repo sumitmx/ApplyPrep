@@ -1,7 +1,8 @@
 import argparse
 import json
 
-from jobagent import config, dedup, pull, store, watchlist
+from jobagent import config, dedup, gmail_sync, pull, store, watchlist
+from jobagent.gmail import auth as gmail_auth
 
 
 def main():
@@ -29,6 +30,11 @@ def main():
     p_serve.add_argument("--port", type=int, default=None)
     p_serve.add_argument("--no-browser", action="store_true")
     p_serve.add_argument("--reload", action="store_true")
+
+    sub.add_parser("gmail-auth")
+
+    p_gmail_sync = sub.add_parser("gmail-sync")
+    p_gmail_sync.add_argument("--days", type=int, default=None)
 
     p_list = sub.add_parser("list")
     p_list.add_argument("--gate", default="passed")
@@ -98,6 +104,25 @@ def main():
 
     if args.cmd == "regate":
         result = pull.regate(conn, cfg)
+        print(json.dumps(result, indent=2))
+        return
+
+    if args.cmd == "gmail-auth":
+        gcfg = cfg.get("gmail") or {}
+        try:
+            record = gmail_auth.connect(conn, gcfg.get("client_secret_path", "gmail_client_secret.json"))
+        except gmail_auth.GmailAuthError as exc:
+            print("Could not connect: " + str(exc))
+            raise SystemExit(1)
+        print("Connected as " + (record.get("account_email") or "unknown account"))
+        return
+
+    if args.cmd == "gmail-sync":
+        gcfg = dict(cfg.get("gmail") or {})
+        if args.days is not None:
+            gcfg["lookback_days"] = args.days
+        cfg = dict(cfg, gmail=gcfg)
+        result = gmail_sync.run(conn, cfg)
         print(json.dumps(result, indent=2))
         return
 
