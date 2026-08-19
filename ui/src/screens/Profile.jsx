@@ -190,7 +190,7 @@ export default function Profile() {
 
   const bulletRows = ((kpis && kpis.bullet_usage && kpis.bullet_usage.bullets) || []).map((b) => ({
     key: b.id,
-    label: (b.text.length > 60 ? b.text.slice(0, 60) + '…' : b.text)
+    label: (b.text.length > 110 ? b.text.slice(0, 110) + '…' : b.text)
       + ' · dropped ' + b.dropped + '/' + b.total,
     tone: b.drop_rate >= 50 ? 'rust' : 'slate',
     value: b.drop_rate,
@@ -250,26 +250,28 @@ export default function Profile() {
         </Panel>
       </div>
 
-      <div className="two">
-        <Panel title="Skill demand" note="how often each skill shows up in jobs you've pulled">
-          <div className="pbody">
-            {!kpis ? <Loading /> : (
-              <BarList rows={demandRows} emptyText="Pull some jobs first, or add skills below" />
-            )}
-          </div>
-        </Panel>
+      <Panel title="Skill demand" note="how often each skill shows up in jobs you've pulled">
+        <div className="pbody">
+          {!kpis ? <Loading /> : (
+            <BarList rows={demandRows} emptyText="Pull some jobs first, or add skills below" />
+          )}
+        </div>
+      </Panel>
 
-        <Panel
-          title="Bullet usage"
-          note={kpis ? 'across ' + kpis.bullet_usage.documents_considered + ' saved CV(s)' : null}
-        >
-          <div className="pbody">
-            {!kpis ? <Loading /> : (
-              <BarList rows={bulletRows} emptyText="Nothing dropped often yet, or not enough tailored CVs saved" />
-            )}
-          </div>
-        </Panel>
-      </div>
+      <Panel
+        title="Bullet usage"
+        note={kpis ? 'across ' + kpis.bullet_usage.documents_considered + ' saved CV(s)' : null}
+      >
+        <div className="pbody">
+          {!kpis ? <Loading /> : (
+            <BarList
+              rows={bulletRows}
+              wide
+              emptyText="Nothing dropped often yet, or not enough tailored CVs saved"
+            />
+          )}
+        </div>
+      </Panel>
 
       <Panel
         title="Skill gap finder"

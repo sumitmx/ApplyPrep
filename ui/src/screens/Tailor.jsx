@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
-import { Empty, ErrorBox, Loading, Panel, Pill, Toast } from '../components'
+import { Empty, ErrorBox, Loading, Panel, Pill, Score, Toast } from '../components'
 
 const TONE = { kept: 'pine', rewrote: 'amber', dropped: 'rust', pulled: 'slate' }
 const WORDING = {
@@ -125,6 +125,24 @@ export default function Tailor() {
             note={saved ? 'saved as a Word file' : 'not saved yet'}
           >
             <div className="pbody">
+              <div className="scores" style={{ justifyContent: 'flex-start', marginBottom: 8 }}>
+                <Score value={result.ats_score} label="ATS keyword match" />
+              </div>
+              {kw && (
+                <p style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 14 }}>
+                  <span style={{ color: 'var(--pine)' }}>
+                    Good at: {kw.covered.map((c) => c.term).join(', ') || 'nothing matched yet'}
+                  </span>
+                  {kw.real_gap.length > 0 && (
+                    <>
+                      <br />
+                      <span style={{ color: 'var(--rust)' }}>
+                        Lacking: {kw.real_gap.map((c) => c.term).join(', ')}
+                      </span>
+                    </>
+                  )}
+                </p>
+              )}
               <pre style={{
                 whiteSpace: 'pre-wrap', fontFamily: 'inherit',
                 fontSize: 13, lineHeight: 1.7, maxHeight: 460,
@@ -210,7 +228,7 @@ export default function Tailor() {
               </div>
             </Panel>
 
-            <Panel title="Words this advert asks for" note="three buckets, not a score">
+            <Panel title="Words this advert asks for" note="the three buckets behind the ATS score above">
               <div className="pbody">
                 <div className="kw">
                   <div className="kwcol">

@@ -205,17 +205,26 @@ def tailor_cv(job, master, timeout=agent.DEFAULT_TIMEOUT,
     data = agent.run_json(prompt, timeout, provider)
     changes = guard.check(data.get("changes"), master)
     rendered = render_cv(changes, master)
+    keywords = coverage.analyse(job.get("description"), rendered, master)
     return {
         "changes": changes,
         "note": data.get("note"),
         "rendered": rendered,
         "parse_safety": lint.check(rendered, changes),
-        "keywords": coverage.analyse(job.get("description"), rendered, master),
+        "keywords": keywords,
+        "ats_score": _ats_score(keywords["counts"]),
         "counts": {
             action: sum(1 for c in changes if c["action"] == action)
             for action in guard.ACTIONS
         },
     }
+
+
+def _ats_score(counts):
+    total = counts["covered"] + counts["fixable"] + counts["real_gap"]
+    if not total:
+        return None
+    return round(counts["covered"] / total * 100)
 
 
 def cover_letter(job, master, profile, timeout=agent.DEFAULT_TIMEOUT,

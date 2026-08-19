@@ -7,7 +7,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from jobagent import profile
-from jobagent.documents import coverage, guard, lint
+from jobagent.documents import coverage, guard, lint, tailor
 
 MASTER = yaml.safe_load(
     (Path(__file__).resolve().parents[1] / "master.yaml").read_text(encoding="utf-8")
@@ -97,6 +97,18 @@ def test_coverage_never_returns_a_percentage():
     result = coverage.analyse("Python and Go", "Python", MASTER)
     assert set(result["counts"]) == {"covered", "fixable", "real_gap"}
     assert "score" not in result and "percent" not in result
+
+
+def test_ats_score_is_covered_share_of_wanted_terms():
+    assert tailor._ats_score({"covered": 3, "fixable": 1, "real_gap": 0}) == 75
+
+
+def test_ats_score_rounds_to_nearest_percent():
+    assert tailor._ats_score({"covered": 1, "fixable": 1, "real_gap": 1}) == 33
+
+
+def test_ats_score_is_none_when_nothing_is_wanted():
+    assert tailor._ats_score({"covered": 0, "fixable": 0, "real_gap": 0}) is None
 
 
 def test_aliases_stop_false_gaps():
