@@ -19,6 +19,13 @@ PROVIDERS = {
         "setup_hint": "Install Claude Code and sign in, then this works on your "
                        "existing subscription with no API key.",
     },
+    "claude-opus5": {
+        "label": "Claude (Opus 5)",
+        "command": "claude",
+        "model": "claude-opus-5",
+        "setup_hint": "Install Claude Code and sign in, then this works on your "
+                       "existing subscription with no API key.",
+    },
     "openai": {
         "label": "ChatGPT",
         "command": "codex",
@@ -78,6 +85,9 @@ def model(provider=DEFAULT_PROVIDER):
     Purely informational (for display) - reads local config files rather than
     spending a real call, so it must never raise or cost anything.
     """
+    pinned = PROVIDERS.get(provider, {}).get("model")
+    if pinned:
+        return pinned
     reader = _MODEL_READERS.get(provider)
     if not reader:
         return None
@@ -87,10 +97,14 @@ def model(provider=DEFAULT_PROVIDER):
         return None
 
 
-def _run_claude(exe, prompt, timeout):
+def _run_claude(exe, prompt, timeout, model=None):
+    argv = [exe, "-p"]
+    if model:
+        argv += ["--model", model]
+    argv += ["--output-format", "text"]
     try:
         proc = subprocess.run(
-            [exe, "-p", "--output-format", "text"],
+            argv,
             input=prompt,
             capture_output=True,
             text=True,
@@ -147,7 +161,7 @@ def _run_codex(exe, prompt, timeout):
             pass
 
 
-_RUNNERS = {"claude": _run_claude, "openai": _run_codex}
+_RUNNERS = {"claude": _run_claude, "codex": _run_codex}
 
 
 def run(prompt, timeout=DEFAULT_TIMEOUT, provider=DEFAULT_PROVIDER):
@@ -157,7 +171,10 @@ def run(prompt, timeout=DEFAULT_TIMEOUT, provider=DEFAULT_PROVIDER):
         raise AgentError(
             "The " + info["command"] + " command was not found. " + info["setup_hint"]
         )
-    return _RUNNERS[provider](exe, prompt, timeout)
+    runner = _RUNNERS[info["command"]]
+    if info.get("model"):
+        return runner(exe, prompt, timeout, model=info["model"])
+    return runner(exe, prompt, timeout)
 
 
 def run_json(prompt, timeout=DEFAULT_TIMEOUT, provider=DEFAULT_PROVIDER):
