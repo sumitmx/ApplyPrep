@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from jobagent import service, store
 
 MASTER = {"identity": {"name": "Alex Morgan"}}
+CV_PAYLOAD = {"structured": {"identity": {"name": "Alex Morgan"}, "summary": "", "sections": []}}
 
 
 @pytest.fixture
@@ -55,7 +56,7 @@ def test_start_application_unknown_job_returns_none(conn):
 
 
 def test_accepting_a_cv_starts_an_application(conn, tmp_path):
-    store.save_document(conn, 1, "cv", payload={"rendered": "Alex Morgan\nExperience..."})
+    store.save_document(conn, 1, "cv", payload=CV_PAYLOAD)
     result = service.accept_document(conn, 1, "cv", MASTER, str(tmp_path / "docs"))
     assert result["accepted"] is True
     assert result["application_status"] == "drafting"
@@ -77,7 +78,7 @@ def test_accepting_a_letter_does_not_duplicate_an_existing_application(conn, tmp
 
 
 def test_all_documents_lists_only_accepted_ones(conn, tmp_path):
-    store.save_document(conn, 1, "cv", payload={"rendered": "text"})
+    store.save_document(conn, 1, "cv", payload=CV_PAYLOAD)
     store.save_document(conn, 1, "letter", body="Dear hiring manager,")
     service.accept_document(conn, 1, "cv", MASTER, str(tmp_path / "docs"))
 
@@ -89,7 +90,7 @@ def test_all_documents_lists_only_accepted_ones(conn, tmp_path):
 
 
 def test_all_documents_empty_when_nothing_accepted(conn):
-    store.save_document(conn, 1, "cv", payload={"rendered": "text"})
+    store.save_document(conn, 1, "cv", payload=CV_PAYLOAD)
     assert service.all_documents(conn) == []
 
 

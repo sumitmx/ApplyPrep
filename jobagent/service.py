@@ -8,7 +8,7 @@ from . import chat as chat_module
 from . import dedup as dedup_module
 from . import documents as documents_module
 from . import profile, rating, skills as skills_module, store
-from .documents import render
+from .documents import palette, render
 from .documents.guard import known_bullets
 
 MARK_ACTIONS = {
@@ -933,7 +933,8 @@ def stored_document(conn, job_id, kind):
     return row
 
 
-def accept_document(conn, job_id, kind, master, documents_dir="documents"):
+def accept_document(conn, job_id, kind, master, documents_dir="documents",
+                    accent=palette.DEFAULT_ACCENT):
     row = store.get_document(conn, job_id, kind)
     if not row:
         return None
@@ -957,11 +958,11 @@ def accept_document(conn, job_id, kind, master, documents_dir="documents"):
 
     if kind == "cv":
         payload = _json(row.get("payload")) or {}
-        text = payload.get("rendered") or ""
-        if not text:
+        content = payload.get("structured")
+        if not content:
             return {"error": "This draft was made before previews were added. "
                              "Write it again, then save."}
-        path = render.cv_docx(text, identity, chosen)
+        path = render.cv_docx(content, chosen, accent=accent)
     else:
         path = render.letter_docx(row.get("body") or "", identity, chosen)
     conn.execute(

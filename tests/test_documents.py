@@ -139,7 +139,6 @@ def test_a_skill_owned_but_absent_from_the_cv_is_fixable():
 
 
 def test_render_cv_has_headings_and_dates():
-    from jobagent.documents import tailor
     changes = guard.check([
         {"id": "exp.northstar.b1", "action": "kept"},
         {"id": "exp.orion.b1", "action": "dropped"},
@@ -149,6 +148,48 @@ def test_render_cv_has_headings_and_dates():
     assert "Oct 2025 - Present" in text
     assert "AI alerting system" in text
     assert "proof of concept" not in text
+
+
+def test_flatten_cv_of_build_cv_content_matches_render_cv():
+    changes = guard.check([
+        {"id": "exp.northstar.b1", "action": "kept"},
+        {"id": "exp.orion.b1", "action": "dropped"},
+    ], MASTER)
+    content = tailor.build_cv_content(changes, MASTER)
+    assert tailor.flatten_cv(content) == tailor.render_cv(changes, MASTER)
+
+
+def test_build_cv_content_has_expected_section_order_and_identity():
+    changes = guard.check([
+        {"id": "exp.northstar.b1", "action": "kept"},
+    ], MASTER)
+    content = tailor.build_cv_content(changes, MASTER)
+    assert content["identity"]["name"] == "Alex Morgan"
+    kinds = [s["kind"] for s in content["sections"]]
+    assert kinds[0] == "skills"
+    assert kinds[1] == "experience"
+    assert "education" in kinds
+    experience = next(s for s in content["sections"] if s["kind"] == "experience")
+    role = experience["roles"][0]
+    assert role["bullets"] == ["Own the architecture of an AI alerting system on "
+                               "Google Cloud for a Google engineering team, tracking "
+                               "SLA adherence in their ticket-management system and "
+                               "sending case owners real-time alerts with AI "
+                               "recommendations"]
+
+
+def test_palette_entries_have_a_label_and_a_valid_hex():
+    import re as _re
+    from jobagent.documents import palette
+    assert palette.DEFAULT_ACCENT in palette.ACCENTS
+    for entry in palette.ACCENTS.values():
+        assert entry["label"]
+        assert _re.match(r"^#[0-9A-Fa-f]{6}$", entry["hex"])
+
+
+def test_palette_resolve_falls_back_to_default_for_unknown_key():
+    from jobagent.documents import palette
+    assert palette.resolve("not-a-real-color") == palette.ACCENTS[palette.DEFAULT_ACCENT]
 
 
 def test_lint_returns_pass_fail_not_a_score():

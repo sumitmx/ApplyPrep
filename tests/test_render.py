@@ -41,8 +41,8 @@ def _draft():
 
 
 def test_cv_docx_is_a_real_word_file(tmp_path):
-    text = tailor.render_cv(_draft(), MASTER)
-    path = render.cv_docx(text, MASTER["identity"], tmp_path / "cv.docx")
+    content = tailor.build_cv_content(_draft(), MASTER)
+    path = render.cv_docx(content, tmp_path / "cv.docx")
     assert path.exists() and path.stat().st_size > 5000
     with zipfile.ZipFile(path) as z:
         assert "word/document.xml" in z.namelist()
@@ -54,12 +54,25 @@ def test_cv_docx_is_a_real_word_file(tmp_path):
 
 
 def test_cv_docx_has_no_tables_or_text_boxes(tmp_path):
-    text = tailor.render_cv(_draft(), MASTER)
-    path = render.cv_docx(text, MASTER["identity"], tmp_path / "cv.docx")
+    content = tailor.build_cv_content(_draft(), MASTER)
+    path = render.cv_docx(content, tmp_path / "cv.docx")
     with zipfile.ZipFile(path) as z:
         body = z.read("word/document.xml").decode("utf-8")
     assert "<w:tbl>" not in body
     assert "<w:txbxContent>" not in body
+
+
+def test_cv_docx_uses_the_chosen_accent_color(tmp_path):
+    content = tailor.build_cv_content(_draft(), MASTER)
+    navy_path = render.cv_docx(content, tmp_path / "navy.docx", accent="navy")
+    teal_path = render.cv_docx(content, tmp_path / "teal.docx", accent="teal")
+    with zipfile.ZipFile(navy_path) as z:
+        navy_body = z.read("word/document.xml").decode("utf-8")
+    with zipfile.ZipFile(teal_path) as z:
+        teal_body = z.read("word/document.xml").decode("utf-8")
+    assert "1F3864" in navy_body
+    assert "1F6B66" in teal_body
+    assert "1F6B66" not in navy_body
 
 
 def test_letter_docx_has_greeting_and_sign_off(tmp_path):
@@ -79,7 +92,7 @@ def test_folder_name_is_slugged():
 
 def test_save_writes_a_file_and_discard_removes_it(conn, tmp_path):
     store.save_document(conn, 1, "cv",
-                        payload={"rendered": tailor.render_cv(_draft(), MASTER)})
+                        payload={"structured": tailor.build_cv_content(_draft(), MASTER)})
     assert service.stored_document(conn, 1, "cv")["has_file"] is False
 
     result = service.accept_document(conn, 1, "cv", MASTER, str(tmp_path / "docs"))

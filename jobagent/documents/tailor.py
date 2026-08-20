@@ -10,7 +10,7 @@ _TYPOGRAPHIC = {
 }
 
 
-def _ascii_safe(text):
+def ascii_safe(text):
     for char, replacement in _TYPOGRAPHIC.items():
         text = text.replace(char, replacement)
     return text
@@ -136,60 +136,135 @@ def _ensure_every_role_survives(keep, master, decided):
             }
 
 
-def render_cv(changes, master):
+def build_cv_content(changes, master):
     decided = {c["id"] for c in changes}
     keep = {c["id"]: c for c in changes if c["action"] != "dropped"}
     _ensure_every_role_survives(keep, master, decided)
-    lines = [
-        (master.get("identity") or {}).get("name", ""),
-        "",
-        "PROFESSIONAL SUMMARY",
-        (master.get("summary") or "").strip(),
-    ]
-    lines += ["", "SKILLS"]
+
+    raw_identity = master.get("identity") or {}
+    identity = {
+        key: (ascii_safe(str(value)) if value is not None else value)
+        for key, value in raw_identity.items()
+    }
+
+    tiers = []
     for tier in ("core", "working", "familiar"):
         names = []
         for entry in (master.get("skills") or {}).get(tier) or []:
             name = entry.get("name") if isinstance(entry, dict) else entry
             if name:
-                names.append(str(name))
+                names.append(ascii_safe(str(name)))
         if names:
-            lines.append(tier.title() + ": " + ", ".join(names))
-    lines += ["", "PROFESSIONAL EXPERIENCE"]
+            tiers.append({"label": tier.title(), "items": names})
+
+    roles = []
     for role in master.get("experience") or []:
         chosen = [b for b in (role.get("bullets") or []) if b.get("id") in keep]
         if not chosen:
             continue
-        lines.append("")
-        lines.append(role.get("title", "") + ", " + role.get("company", ""))
-        if role.get("client"):
-            lines.append("Client: " + role["client"])
-        location = role.get("location") or ""
-        lines.append((location + "    " if location else "") + _period(role))
-        for bullet in chosen:
-            lines.append("- " + keep[bullet["id"]]["text"])
-    projects = [p for p in (master.get("projects") or []) if p.get("id") in keep]
+        roles.append({
+            "title": ascii_safe(role.get("title", "")),
+            "company": ascii_safe(role.get("company", "")),
+            "client": ascii_safe(role["client"]) if role.get("client") else None,
+            "location": ascii_safe(role.get("location") or ""),
+            "period": ascii_safe(_period(role)),
+            "bullets": [ascii_safe(keep[b["id"]]["text"]) for b in chosen],
+        })
+
+    projects = []
+    for project in master.get("projects") or []:
+        if project.get("id") in keep:
+            projects.append({
+                "name": ascii_safe(project.get("name", "")),
+                "text": ascii_safe(keep[project["id"]]["text"]),
+            })
+
+    education = [
+        {
+            "degree": ascii_safe(item.get("degree", "")),
+            "school": ascii_safe(item.get("school", "")),
+            "years": ascii_safe(str(item.get("years", ""))),
+        }
+        for item in master.get("education") or []
+    ]
+
+    certifications = [ascii_safe(str(c)) for c in (master.get("certifications") or [])]
+
+    languages = []
+    for lang in master.get("languages") or []:
+        if isinstance(lang, dict):
+            languages.append({
+                "name": ascii_safe(str(lang.get("name", ""))),
+                "level": ascii_safe(str(lang.get("level", ""))) if lang.get("level") else None,
+            })
+        else:
+            languages.append({"name": ascii_safe(str(lang)), "level": None})
+
+    sections = [
+        {"kind": "skills", "heading": "SKILLS", "tiers": tiers},
+        {"kind": "experience", "heading": "PROFESSIONAL EXPERIENCE", "roles": roles},
+    ]
     if projects:
-        lines += ["", "KEY PROJECTS"]
-        for project in projects:
-            lines.append("- " + project.get("name", "") + ": " + keep[project["id"]]["text"])
-    lines += ["", "EDUCATION"]
-    for item in master.get("education") or []:
-        lines.append(item.get("degree", "") + "  -  " + item.get("school", "")
-                     + " (" + str(item.get("years", "")) + ")")
-    certifications = master.get("certifications") or []
+        sections.append({"kind": "projects", "heading": "KEY PROJECTS", "items": projects})
+    sections.append({"kind": "education", "heading": "EDUCATION", "items": education})
     if certifications:
-        lines += ["", "CERTIFICATIONS"]
-        lines.append(", ".join(str(c) for c in certifications))
-    languages = master.get("languages") or []
+        sections.append({"kind": "certifications", "heading": "CERTIFICATIONS", "items": certifications})
     if languages:
-        lines += ["", "LANGUAGES"]
-        lines.append(", ".join(
-            (str(lang.get("name", "")) + " (" + str(lang.get("level", "")) + ")")
-            if isinstance(lang, dict) else str(lang)
-            for lang in languages
-        ))
-    return _ascii_safe("\n".join(lines))
+        sections.append({"kind": "languages", "heading": "LANGUAGES", "items": languages})
+
+    return {
+        "identity": identity,
+        "summary": ascii_safe((master.get("summary") or "").strip()),
+        "sections": sections,
+    }
+
+
+def flatten_cv(content):
+    identity = content.get("identity") or {}
+    lines = [
+        identity.get("name", ""),
+        "",
+        "PROFESSIONAL SUMMARY",
+        content.get("summary") or "",
+    ]
+    for section in content.get("sections") or []:
+        lines += ["", section["heading"]]
+        kind = section["kind"]
+        if kind == "skills":
+            for tier in section["tiers"]:
+                lines.append(tier["label"] + ": " + ", ".join(tier["items"]))
+        elif kind == "experience":
+            for role in section["roles"]:
+                lines.append("")
+                lines.append(role["title"] + ", " + role["company"])
+                if role.get("client"):
+                    lines.append("Client: " + role["client"])
+                location = role.get("location") or ""
+                lines.append((location + "    " if location else "") + role["period"])
+                for bullet in role["bullets"]:
+                    lines.append("- " + bullet)
+        elif kind == "projects":
+            for item in section["items"]:
+                lines.append("- " + item["name"] + ": " + item["text"])
+        elif kind == "education":
+            for item in section["items"]:
+                lines.append(item["degree"] + "  -  " + item["school"]
+                             + " (" + item["years"] + ")")
+        elif kind == "certifications":
+            lines.append(", ".join(section["items"]))
+        elif kind == "languages":
+            lines.append(", ".join(
+                (lang["name"] + " (" + lang["level"] + ")") if lang.get("level") else lang["name"]
+                for lang in section["items"]
+            ))
+        elif kind == "highlights":
+            for item in section["items"]:
+                lines.append("- " + item)
+    return "\n".join(lines)
+
+
+def render_cv(changes, master):
+    return flatten_cv(build_cv_content(changes, master))
 
 
 def tailor_cv(job, master, timeout=agent.DEFAULT_TIMEOUT,
@@ -204,12 +279,14 @@ def tailor_cv(job, master, timeout=agent.DEFAULT_TIMEOUT,
     })
     data = agent.run_json(prompt, timeout, provider)
     changes = guard.check(data.get("changes"), master)
-    rendered = render_cv(changes, master)
+    content = build_cv_content(changes, master)
+    rendered = flatten_cv(content)
     keywords = coverage.analyse(job.get("description"), rendered, master)
     return {
         "changes": changes,
         "note": data.get("note"),
         "rendered": rendered,
+        "structured": content,
         "parse_safety": lint.check(rendered, changes),
         "keywords": keywords,
         "ats_score": _ats_score(keywords["counts"]),

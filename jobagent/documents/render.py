@@ -4,17 +4,15 @@ from pathlib import Path
 from docx import Document
 from docx.shared import Pt, RGBColor
 
-HEADINGS = {
-    "PROFESSIONAL SUMMARY", "PROFESSIONAL EXPERIENCE", "KEY PROJECTS",
-    "SKILLS", "EDUCATION", "CERTIFICATIONS", "LANGUAGES",
-}
+from . import palette
 
-DARK_BLUE = RGBColor(0x1F, 0x38, 0x64)
-MED_BLUE = RGBColor(0x2E, 0x54, 0x96)
 GRAY = RGBColor(0x59, 0x59, 0x59)
 BLACK = RGBColor(0x00, 0x00, 0x00)
 
-_TIER_LINE = re.compile(r"^(Core|Working|Familiar):\s*(.*)$")
+
+def _accent_rgb(accent):
+    hex_value = palette.resolve(accent)["hex"].lstrip("#")
+    return RGBColor(int(hex_value[0:2], 16), int(hex_value[2:4], 16), int(hex_value[4:6], 16))
 
 
 def slug(text):
@@ -65,103 +63,100 @@ def _run(para, text, bold=False, color=BLACK, size=9.5):
     return run
 
 
-def _heading(doc, text):
+def _heading(doc, text, color):
     para = doc.add_paragraph()
     para.paragraph_format.space_before = Pt(10)
-    _run(para, text, bold=True, color=DARK_BLUE, size=12)
+    _run(para, text, bold=True, color=color, size=12)
     return para
 
 
-def cv_docx(rendered_text, identity, path):
+def cv_docx(content, path, accent=palette.DEFAULT_ACCENT):
     doc = _base_document()
+    accent_rgb = _accent_rgb(accent)
+    identity = content.get("identity") or {}
 
     name_para = doc.add_paragraph()
-    _run(name_para, (identity or {}).get("name", ""), bold=True, color=DARK_BLUE, size=24)
+    _run(name_para, identity.get("name", ""), bold=True, color=accent_rgb, size=24)
 
-    headline = (identity or {}).get("headline")
+    headline = identity.get("headline")
     if headline:
         headline_para = doc.add_paragraph()
-        _run(headline_para, headline, bold=True, color=MED_BLUE, size=10.5)
+        _run(headline_para, headline, bold=True, color=accent_rgb, size=10.5)
 
     contact = " | ".join(
         str(v) for v in [
-            (identity or {}).get("location"),
-            (identity or {}).get("phone"),
-            (identity or {}).get("email"),
-            (identity or {}).get("linkedin"),
+            identity.get("location"), identity.get("phone"),
+            identity.get("email"), identity.get("linkedin"),
         ] if v
     )
     if contact:
         contact_para = doc.add_paragraph()
         _run(contact_para, contact, bold=False, color=GRAY, size=9)
 
-    lines = rendered_text.splitlines()
-    if lines and lines[0].strip() == (identity or {}).get("name", ""):
-        lines = lines[1:]
-
-    section = None
-    role_state = None
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            if section == "PROFESSIONAL EXPERIENCE":
-                role_state = "header"
-            continue
-
-        if stripped in HEADINGS:
-            section = stripped
-            role_state = None
-            _heading(doc, stripped)
-            continue
-
-        if stripped.startswith("- "):
-            content = stripped[2:]
-            para = doc.add_paragraph(style="List Bullet")
-            if section == "KEY PROJECTS" and ":" in content:
-                label, _, rest = content.partition(":")
-                _run(para, label + ":", bold=True, color=BLACK, size=9.5)
-                _run(para, rest, bold=False, color=BLACK, size=9.5)
-            else:
-                _run(para, content, bold=False, color=BLACK, size=9.5)
-            continue
-
-        if section == "PROFESSIONAL EXPERIENCE" and role_state == "header":
-            title, _, company = stripped.partition(", ")
-            para = doc.add_paragraph()
-            _run(para, title, bold=True, color=BLACK, size=11)
-            _run(para, ", " + company, bold=False, color=MED_BLUE, size=11)
-            role_state = "location"
-            continue
-
-        if section == "PROFESSIONAL EXPERIENCE" and role_state == "location":
-            if stripped.startswith("Client: "):
-                para = doc.add_paragraph()
-                _run(para, stripped, bold=False, color=MED_BLUE, size=9.5)
-                continue
-            para = doc.add_paragraph()
-            _run(para, stripped, bold=False, color=GRAY, size=9)
-            role_state = None
-            continue
-
-        if section == "SKILLS":
-            match = _TIER_LINE.match(stripped)
-            if match:
-                para = doc.add_paragraph()
-                _run(para, match.group(1) + ": ", bold=True, color=DARK_BLUE, size=9.5)
-                _run(para, match.group(2), bold=False, color=BLACK, size=9.5)
-                continue
-
-        if section == "EDUCATION" and "  -  " in stripped:
-            degree, _, rest = stripped.partition("  -  ")
-            para = doc.add_paragraph()
-            _run(para, degree, bold=True, color=BLACK, size=9.5)
-            _run(para, "  -  " + rest, bold=False, color=BLACK, size=9.5)
-            continue
-
+    summary = content.get("summary")
+    if summary:
+        _heading(doc, "PROFESSIONAL SUMMARY", accent_rgb)
         para = doc.add_paragraph()
-        _run(para, stripped, bold=False, color=BLACK, size=9.5)
+        _run(para, summary, bold=False, color=BLACK, size=9.5)
 
-    doc.save(str(path))
+    for section in content.get("sections") or []:
+        kind = section["kind"]
+        _heading(doc, section["heading"], accent_rgb)
+
+        if kind == "skills":
+            for tier in section["tiers"]:
+                para = doc.add_paragraph()
+                _run(para, tier["label"] + ": ", bold=True, color=accent_rgb, size=9.5)
+                _run(para, ", ".join(tier["items"]), bold=False, color=BLACK, size=9.5)
+
+        elif kind == "experience":
+            for role in section["roles"]:
+                para = doc.add_paragraph()
+                _run(para, role["title"], bold=True, color=BLACK, size=11)
+                _run(para, ", " + role["company"], bold=False, color=accent_rgb, size=11)
+                if role.get("client"):
+                    client_para = doc.add_paragraph()
+                    _run(client_para, "Client: " + role["client"],
+                         bold=False, color=accent_rgb, size=9.5)
+                loc_para = doc.add_paragraph()
+                location = role.get("location") or ""
+                _run(loc_para, (location + "    " if location else "") + role["period"],
+                     bold=False, color=GRAY, size=9)
+                for bullet in role["bullets"]:
+                    para = doc.add_paragraph(style="List Bullet")
+                    _run(para, bullet, bold=False, color=BLACK, size=9.5)
+
+        elif kind == "projects":
+            for item in section["items"]:
+                para = doc.add_paragraph(style="List Bullet")
+                _run(para, item["name"] + ":", bold=True, color=BLACK, size=9.5)
+                _run(para, " " + item["text"], bold=False, color=BLACK, size=9.5)
+
+        elif kind == "education":
+            for item in section["items"]:
+                para = doc.add_paragraph()
+                _run(para, item["degree"], bold=True, color=BLACK, size=9.5)
+                _run(para, "  -  " + item["school"] + " (" + item["years"] + ")",
+                     bold=False, color=BLACK, size=9.5)
+
+        elif kind == "certifications":
+            para = doc.add_paragraph()
+            _run(para, ", ".join(section["items"]), bold=False, color=BLACK, size=9.5)
+
+        elif kind == "languages":
+            text = ", ".join(
+                (lang["name"] + " (" + lang["level"] + ")") if lang.get("level") else lang["name"]
+                for lang in section["items"]
+            )
+            para = doc.add_paragraph()
+            _run(para, text, bold=False, color=BLACK, size=9.5)
+
+        elif kind == "highlights":
+            for item in section["items"]:
+                para = doc.add_paragraph(style="List Bullet")
+                _run(para, item, bold=False, color=BLACK, size=9.5)
+
+    doc.save(path)
     return path
 
 
