@@ -1,10 +1,17 @@
-export default function CvPreview({ content, accentHex }) {
+export default function CvPreview({ content, accentHex, accentInk, accentText }) {
   const identity = content.identity || {}
   const contact = [identity.location, identity.phone, identity.email, identity.linkedin]
     .filter(Boolean).join(' | ')
 
   return (
-    <div className="cv-preview" style={{ '--cv-accent': accentHex }}>
+    <div
+      className="cv-preview"
+      style={{
+        '--cv-accent': accentHex,
+        '--cv-ink': accentInk || '#fff',
+        '--cv-accent-text': accentText || accentHex,
+      }}
+    >
       <div className="cv-header">
         <div className="cv-name">{identity.name}</div>
         {identity.headline && <div className="cv-headline">{identity.headline}</div>}

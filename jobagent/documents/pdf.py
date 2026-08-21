@@ -16,25 +16,27 @@ def _esc(text):
 
 
 def _styles(accent_hex):
+    ink = palette.ink_for(accent_hex)
+    on_paper = palette.on_paper(accent_hex)
     return {
         "name": ParagraphStyle(
             "name", fontName="Helvetica-Bold", fontSize=24,
-            textColor=HexColor(WHITE), backColor=HexColor(accent_hex),
+            textColor=HexColor(ink), backColor=HexColor(accent_hex),
             leading=28, spaceAfter=0, spaceBefore=0, borderPadding=(6, 10, 2, 10),
         ),
         "headline": ParagraphStyle(
             "headline", fontName="Helvetica-Bold", fontSize=10.5,
-            textColor=HexColor(WHITE), backColor=HexColor(accent_hex),
+            textColor=HexColor(ink), backColor=HexColor(accent_hex),
             spaceAfter=0, spaceBefore=0, borderPadding=(0, 10, 2, 10),
         ),
         "contact": ParagraphStyle(
             "contact", fontName="Helvetica", fontSize=9,
-            textColor=HexColor(WHITE), backColor=HexColor(accent_hex),
+            textColor=HexColor(ink), backColor=HexColor(accent_hex),
             spaceAfter=8, spaceBefore=0, borderPadding=(0, 10, 6, 10),
         ),
         "heading": ParagraphStyle(
             "heading", fontName="Helvetica-Bold", fontSize=12,
-            textColor=HexColor(WHITE), backColor=HexColor(accent_hex),
+            textColor=HexColor(ink), backColor=HexColor(accent_hex),
             spaceBefore=10, spaceAfter=4, borderPadding=(4, 10, 4, 10),
         ),
         "body": ParagraphStyle(
@@ -47,7 +49,7 @@ def _styles(accent_hex):
         ),
         "client": ParagraphStyle(
             "client", fontName="Helvetica", fontSize=9.5,
-            textColor=HexColor(accent_hex), spaceAfter=2,
+            textColor=HexColor(on_paper), spaceAfter=2,
         ),
         "bullet": ParagraphStyle(
             "bullet", fontName="Helvetica", fontSize=9.5,
@@ -67,6 +69,7 @@ def _bullets(items, style):
 
 def cv_pdf(content, path, accent=palette.DEFAULT_ACCENT):
     accent_hex = palette.resolve(accent)["hex"]
+    _on_paper = palette.on_paper(accent_hex)
     styles = _styles(accent_hex)
     identity = content.get("identity") or {}
 
@@ -105,7 +108,7 @@ def cv_pdf(content, path, accent=palette.DEFAULT_ACCENT):
         if kind == "skills":
             for tier in section["tiers"]:
                 text = (
-                    '<font color="' + accent_hex + '"><b>' + _esc(tier["label"]) + ': </b></font>'
+                    '<font color="' + _on_paper + '"><b>' + _esc(tier["label"]) + ': </b></font>'
                     + _esc(", ".join(tier["items"]))
                 )
                 flow.append(Paragraph(text, styles["body"]))
@@ -113,7 +116,7 @@ def cv_pdf(content, path, accent=palette.DEFAULT_ACCENT):
         elif kind == "experience":
             for role in section["roles"]:
                 header = (
-                    "<b>" + _esc(role["title"]) + "</b>, <font color=\"" + accent_hex + "\">"
+                    "<b>" + _esc(role["title"]) + "</b>, <font color=\"" + _on_paper + "\">"
                     + _esc(role["company"]) + "</font>"
                 )
                 flow.append(Paragraph(header, styles["body"]))

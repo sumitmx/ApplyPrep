@@ -31,6 +31,7 @@ export default function Tailor() {
   const [accents, setAccents] = useState([])
   const [format, setFormat] = usePersisted('cvFormat', 'docx')
   const [accent, setAccent] = usePersisted('cvAccent', 'navy')
+  const chosenAccent = accents.find((a) => a.key === accent) || {}
 
   useEffect(() => {
     api.cvAccents().then((d) => setAccents(d.accents)).catch(() => {})
@@ -236,7 +237,9 @@ export default function Tailor() {
                   </div>
                   <CvPreview
                     content={result.structured}
-                    accentHex={(accents.find((a) => a.key === accent) || {}).hex || '#1F3864'}
+                    accentHex={chosenAccent.hex || '#1F3864'}
+                    accentInk={chosenAccent.ink}
+                    accentText={chosenAccent.text}
                   />
                 </>
               ) : (

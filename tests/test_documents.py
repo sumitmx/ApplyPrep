@@ -188,7 +188,31 @@ def test_palette_entries_have_a_label_and_a_valid_hex():
 
 def test_palette_resolve_falls_back_to_default_for_unknown_key():
     from jobagent.documents import palette
-    assert palette.resolve("not-a-real-color") == palette.ACCENTS[palette.DEFAULT_ACCENT]
+    resolved = palette.resolve("not-a-real-color")
+    default = palette.ACCENTS[palette.DEFAULT_ACCENT]
+    assert {k: resolved[k] for k in default} == default
+    assert resolved["ink"], "resolve should also hand back a readable ink"
+
+
+def test_every_accent_has_readable_type_on_its_own_band():
+    """A light accent with white type would be unreadable. ink_for picks the
+    contrast winner, so no accent may fall below the WCAG AA threshold."""
+    from jobagent.documents import palette
+    for key, entry in palette.ACCENTS.items():
+        ratio = palette.contrast(entry["hex"], palette.ink_for(entry["hex"]))
+        assert ratio >= 4.5, key + " only reaches " + str(round(ratio, 2)) + ":1"
+
+
+def test_light_accents_are_darkened_before_being_used_as_text():
+    """The accent doubles as type on white paper. Light ones have to come down
+    to stay legible; deep ones should be left exactly as they are."""
+    from jobagent.documents import palette
+    for key, entry in palette.ACCENTS.items():
+        on_paper = palette.on_paper(entry["hex"])
+        ratio = palette.contrast(on_paper, "#FFFFFF")
+        assert ratio >= 4.5, key + " as text is only " + str(round(ratio, 2)) + ":1"
+        if entry["tone"] == "deep":
+            assert on_paper == entry["hex"], key + " should not have been altered"
 
 
 def test_lint_returns_pass_fail_not_a_score():

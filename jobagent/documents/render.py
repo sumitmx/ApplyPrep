@@ -13,9 +13,21 @@ BLACK = RGBColor(0x00, 0x00, 0x00)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 
 
+def _rgb(hex_value):
+    h = str(hex_value).lstrip("#")
+    return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
 def _accent_rgb(accent):
-    hex_value = palette.resolve(accent)["hex"].lstrip("#")
-    return RGBColor(int(hex_value[0:2], 16), int(hex_value[2:4], 16), int(hex_value[4:6], 16))
+    """The accent as *text* on white paper, so light accents stay legible.
+    Background bands use the raw hex; only type goes through here."""
+    return _rgb(palette.on_paper(palette.resolve(accent)["hex"]))
+
+
+def _ink_rgb(accent_hex):
+    """White or dark ink, whichever stays readable on this accent. Light
+    accents would swallow white text, so the choice is measured, not assumed."""
+    return _rgb(palette.ink_for(accent_hex))
 
 
 def _shade(paragraph, hex_value):
@@ -81,7 +93,7 @@ def _heading(doc, text, accent_hex):
     para.paragraph_format.space_before = Pt(10)
     para.paragraph_format.space_after = Pt(4)
     _shade(para, accent_hex)
-    _run(para, text, bold=True, color=WHITE, size=12)
+    _run(para, text, bold=True, color=_ink_rgb(accent_hex), size=12)
     return para
 
 
@@ -89,20 +101,21 @@ def cv_docx(content, path, accent=palette.DEFAULT_ACCENT):
     doc = _base_document()
     accent_rgb = _accent_rgb(accent)
     accent_hex = palette.resolve(accent)["hex"].lstrip("#")
+    ink = _ink_rgb(accent_hex)
     identity = content.get("identity") or {}
 
     name_para = doc.add_paragraph()
     name_para.paragraph_format.space_before = Pt(6)
     name_para.paragraph_format.space_after = Pt(2)
     _shade(name_para, accent_hex)
-    _run(name_para, identity.get("name", ""), bold=True, color=WHITE, size=24)
+    _run(name_para, identity.get("name", ""), bold=True, color=ink, size=24)
 
     headline = identity.get("headline")
     if headline:
         headline_para = doc.add_paragraph()
         headline_para.paragraph_format.space_after = Pt(2)
         _shade(headline_para, accent_hex)
-        _run(headline_para, headline, bold=True, color=WHITE, size=10.5)
+        _run(headline_para, headline, bold=True, color=ink, size=10.5)
 
     contact = " | ".join(
         str(v) for v in [
@@ -114,7 +127,7 @@ def cv_docx(content, path, accent=palette.DEFAULT_ACCENT):
         contact_para = doc.add_paragraph()
         contact_para.paragraph_format.space_after = Pt(6)
         _shade(contact_para, accent_hex)
-        _run(contact_para, contact, bold=False, color=WHITE, size=9)
+        _run(contact_para, contact, bold=False, color=ink, size=9)
 
     summary = content.get("summary")
     if summary:

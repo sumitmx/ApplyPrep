@@ -398,7 +398,12 @@ def create_app(cfg=None):
     @app.get("/api/documents/cv-accents")
     def get_cv_accents():
         return {
-            "accents": [{"key": k, **v} for k, v in palette.ACCENTS.items()],
+            "accents": [
+                {"key": k, **v,
+                 "ink": palette.ink_for(v["hex"]),
+                 "text": palette.on_paper(v["hex"])}
+                for k, v in palette.ACCENTS.items()
+            ],
             "default": palette.DEFAULT_ACCENT,
         }
 

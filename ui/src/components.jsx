@@ -191,10 +191,10 @@ export function ErrorBox({ error }) {
 }
 
 const ASK_PRESETS = [
-  'Summarize the job advert in headers and bullets',
-  'Is it a freelance work?',
-  'Is Visa sponsorship available?',
-  'Is remote mode available?',
+  { label: 'Summarize', question: 'Summarize the job advert in headers and bullets' },
+  { label: 'Freelance?', question: 'Is it a freelance work?' },
+  { label: 'Visa sponsorship?', question: 'Is Visa sponsorship available?' },
+  { label: 'Remote?', question: 'Is remote mode available?' },
 ]
 
 export function AskAIChat({ jobId, jobTitle, onClose }) {
@@ -267,24 +267,10 @@ export function AskAIChat({ jobId, jobTitle, onClose }) {
         <div className="chatbody" ref={bodyRef}>
           {loadingHistory && <p className="muted" style={{ fontSize: 13 }}>Loading...</p>}
           {!loadingHistory && messages.length === 0 && (
-            <>
-              <p className="muted" style={{ fontSize: 13 }}>
-                Ask anything about this job, the posting text, whether a badge looks
-                wrong, how you match up. It only knows this one job.
-              </p>
-              <div className="chatpresets">
-                {ASK_PRESETS.map((q) => (
-                  <button
-                    key={q}
-                    className="chatpreset"
-                    onClick={() => ask(q)}
-                    disabled={busy}
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            </>
+            <p className="muted" style={{ fontSize: 13 }}>
+              Ask anything about this job, the posting text, whether a badge looks
+              wrong, how you match up. It only knows this one job.
+            </p>
           )}
           {messages.map((m, i) => (
             <div className={'chatmsg ' + (m.role === 'user' ? 'user' : 'ai')} key={i}>
@@ -294,6 +280,19 @@ export function AskAIChat({ jobId, jobTitle, onClose }) {
           {busy && <div className="chatmsg ai muted">Thinking...</div>}
         </div>
         <ErrorBox error={error} />
+        <div className="chatpresets">
+          {ASK_PRESETS.map((preset) => (
+            <button
+              key={preset.label}
+              className="chatpreset"
+              title={preset.question}
+              onClick={() => ask(preset.question)}
+              disabled={busy}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
         <div className="chatinput">
           <textarea
             rows={2}

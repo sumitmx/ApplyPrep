@@ -293,10 +293,23 @@ def _seed_cv_document(client):
 
 
 def test_cv_accents_lists_the_palette(client):
+    from jobagent.documents import palette
     body = client.get("/api/documents/cv-accents").json()
     assert body["default"] == "navy"
-    assert len(body["accents"]) == 6
-    assert {a["key"] for a in body["accents"]} >= {"navy", "teal", "burgundy"}
+    assert len(body["accents"]) == len(palette.ACCENTS)
+    keys = {a["key"] for a in body["accents"]}
+    assert keys >= {"navy", "teal", "burgundy"}
+    assert keys >= {"sky", "sage", "sand"}, "light accents should be offered too"
+
+
+def test_cv_accents_carry_the_colors_the_ui_needs_to_render_them(client):
+    body = client.get("/api/documents/cv-accents").json()
+    by_key = {a["key"]: a for a in body["accents"]}
+    # A deep accent takes white type; a light one must not.
+    assert by_key["navy"]["ink"] == "#FFFFFF"
+    assert by_key["sand"]["ink"] != "#FFFFFF"
+    # Every accent ships a paper-safe variant for use as text.
+    assert all(a.get("text") for a in body["accents"])
 
 
 def test_export_cv_before_any_draft_is_404(client):
