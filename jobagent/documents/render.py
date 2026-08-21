@@ -6,7 +6,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
-from . import layout, palette
+from . import layout, palette, tailor
 
 GRAY = RGBColor(0x59, 0x59, 0x59)
 BLACK = RGBColor(0x00, 0x00, 0x00)
@@ -219,8 +219,12 @@ def cv_docx(content, path, accent=palette.DEFAULT_ACCENT):
 
         elif kind == "highlights":
             for item in section["items"]:
+                topic, text = tailor.highlight_parts(item)
                 para = doc.add_paragraph(style="List Bullet")
-                _run(para, item, bold=False, color=BLACK, size=FONT["bullet"])
+                if topic:
+                    _run(para, topic + " - ", bold=True, color=BLACK,
+                         size=FONT["bullet"])
+                _run(para, text, bold=False, color=BLACK, size=FONT["bullet"])
 
         # Every section closes the same way, so the next heading always has air
         # above it regardless of what the section ended with.

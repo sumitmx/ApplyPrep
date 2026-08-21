@@ -59,6 +59,7 @@ class SaveSkillsBody(BaseModel):
 
 class HighlightBody(BaseModel):
     text: str
+    topic: str | None = None
 
 
 def create_app(cfg=None):
@@ -585,7 +586,7 @@ def create_app(cfg=None):
     def post_highlight(job_id: int, body: HighlightBody):
         conn = db()
         try:
-            result = service.add_cv_highlight(conn, job_id, master(), body.text)
+            result = service.add_cv_highlight(conn, job_id, master(), body.text, body.topic)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except service.ExportUnavailable as exc:

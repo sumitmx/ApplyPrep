@@ -23,13 +23,18 @@ RULES FOR SUGGESTIONS - these matter most:
   voice as the bullets below. No preamble, no "Responsible for", no "Proven
   track record", no adjectives like strong, extensive, excellent or passionate.
 - Prefer a bullet carrying a number - scale, count, percentage or duration.
+- Give each one a "topic": two or three words naming what was done, in title
+  case, e.g. "Evaluation Harness", "Blue/Green Rollout", "Vendor Consolidation".
+  It is a label, not a sentence - no verbs, no trailing punctuation, and it must
+  not simply repeat the requirement wording.
 - If the advert states fewer than five requirements the CV is missing, return
   fewer suggestions. Do not pad to reach five.
 
 Shape:
 {"strengths": ["<specific strength, one clause>", ...],
 "improvements": ["<specific gap or weakness, one clause>", ...],
-"suggestions": [{"text": "<a finished CV bullet, 30 words max>",
+"suggestions": [{"topic": "<two or three words naming what was done>",
+"text": "<a finished CV bullet, 30 words max>",
 "requirement": "<the advert's wording for what this answers>",
 "why": "<one short clause on why it would help for this job>"}]}
 
@@ -79,7 +84,9 @@ def review_cv(job, cv_text, timeout=agent.DEFAULT_TIMEOUT, provider=agent.DEFAUL
             continue
         why = str((item or {}).get("why") or "").strip()
         requirement = str((item or {}).get("requirement") or "").strip()
+        topic = str((item or {}).get("topic") or "").strip()
         suggestions.append({
+            "topic": topic or None,
             "text": text,
             "requirement": requirement or None,
             "why": why or None,

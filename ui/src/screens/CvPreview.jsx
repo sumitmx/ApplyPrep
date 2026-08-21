@@ -82,7 +82,12 @@ export default function CvPreview({ content, accentHex, accentInk, accentText, l
 
           {section.kind === 'highlights' && (
             <ul className="cv-bullets">
-              {section.items.map((item, ii) => <li key={ii}>{item}</li>)}
+              {section.items.map((item, ii) => {
+                // Older drafts stored highlights as plain strings.
+                const topic = typeof item === 'object' ? item.topic : null
+                const text = typeof item === 'object' ? item.text : item
+                return <li key={ii}>{topic && <b>{topic} - </b>}{text}</li>
+              })}
             </ul>
           )}
         </div>

@@ -1035,8 +1035,9 @@ def stored_review(conn, job_id):
     return _json(row.get("payload"))
 
 
-def add_cv_highlight(conn, job_id, master, text):
+def add_cv_highlight(conn, job_id, master, text, topic=None):
     text = (text or "").strip()
+    topic = (topic or "").strip()
     if not text:
         raise ValueError("Nothing to add.")
     job = job_detail(conn, job_id, master)
@@ -1058,7 +1059,12 @@ def add_cv_highlight(conn, job_id, master, text):
             len(sections) - 1,
         )
         sections.insert(exp_index + 1, highlights)
-    highlights["items"].append(tailor.ascii_safe(text))
+    # Stored as a dict once a topic is known; plain strings stay readable
+    # so drafts saved before topics existed still render.
+    entry = tailor.ascii_safe(text)
+    if topic:
+        entry = {"topic": tailor.ascii_safe(topic), "text": entry}
+    highlights["items"].append(entry)
     content["sections"] = sections
     result = tailor.derive_cv_result(
         content, payload.get("changes") or [], payload.get("note"), job, master

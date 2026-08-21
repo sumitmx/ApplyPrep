@@ -98,10 +98,10 @@ export const api = {
   exportCvUrl: (id, fmt, accent) =>
     '/api/documents/' + id + '/cv/export?fmt=' + fmt + '&accent=' + accent,
   reviewCv: (id) => request('/documents/' + id + '/cv/review', { method: 'POST' }),
-  addCvHighlight: (id, text) =>
+  addCvHighlight: (id, text, topic) =>
     request('/documents/' + id + '/cv/highlights', {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, topic: topic || null }),
     }),
   pull: (body) =>
     request('/pull', { method: 'POST', body: JSON.stringify(body || {}) }),

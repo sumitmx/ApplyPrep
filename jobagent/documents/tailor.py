@@ -263,8 +263,22 @@ def flatten_cv(content):
             ))
         elif kind == "highlights":
             for item in section["items"]:
-                lines.append("- " + item)
+                topic, text = highlight_parts(item)
+                lines.append("- " + (topic + " - " + text if topic else text))
     return "\n".join(lines)
+
+
+def highlight_parts(item):
+    """Split a highlight into its short topic and the statement itself.
+
+    Highlights gained a topic later on, so items saved before that are plain
+    strings. Those come back with no topic rather than breaking the render.
+    """
+    if isinstance(item, dict):
+        topic = str(item.get("topic") or "").strip()
+        text = str(item.get("text") or "").strip()
+        return (topic or None), text
+    return None, str(item or "").strip()
 
 
 def render_cv(changes, master):

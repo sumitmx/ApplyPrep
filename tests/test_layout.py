@@ -118,3 +118,60 @@ def test_points_convert_to_css_pixels_at_the_standard_ratio():
     assert layout.css_vars()["--cv-fs-bullet"] == str(
         round(FONT["bullet"] * 96 / 72, 2)
     ) + "px"
+
+
+# --- highlight topics -------------------------------------------------------
+
+def test_a_highlight_splits_into_its_topic_and_statement():
+    topic, text = tailor.highlight_parts(
+        {"topic": "Evaluation Harness", "text": "Built a harness over 300 cases."}
+    )
+    assert topic == "Evaluation Harness"
+    assert text == "Built a harness over 300 cases."
+
+
+def test_highlights_saved_before_topics_existed_still_render():
+    """They were stored as plain strings, so they must not break the render."""
+    topic, text = tailor.highlight_parts("Built a harness over 300 cases.")
+    assert topic is None
+    assert text == "Built a harness over 300 cases."
+
+
+def test_a_blank_topic_is_treated_as_none_not_an_empty_label():
+    assert tailor.highlight_parts({"topic": "   ", "text": "Did a thing."})[0] is None
+
+
+def _cv_with_highlight(item):
+    changes = guard.check([{"id": "exp.northstar.b1", "action": "kept"}], MASTER)
+    content = tailor.build_cv_content(changes, MASTER)
+    content["sections"].append(
+        {"kind": "highlights", "heading": "ADDITIONAL HIGHLIGHTS", "items": [item]}
+    )
+    return content
+
+
+def test_the_topic_leads_the_bullet_in_word(tmp_path):
+    content = _cv_with_highlight(
+        {"topic": "Evaluation Harness", "text": "Scored 300 labelled cases."}
+    )
+    doc = Document(str(render.cv_docx(content, tmp_path / "h.docx")))
+    para = next(
+        p for p in doc.paragraphs if "Scored 300 labelled cases." in p.text
+    )
+    assert para.text.startswith("Evaluation Harness - ")
+    assert para.runs[0].bold is True, "the topic should stand out from the statement"
+
+
+def test_the_topic_reaches_the_plain_text_rendering(tmp_path):
+    content = _cv_with_highlight(
+        {"topic": "Evaluation Harness", "text": "Scored 300 labelled cases."}
+    )
+    assert "- Evaluation Harness - Scored 300 labelled cases." in tailor.flatten_cv(content)
+
+
+def test_the_pdf_renders_a_highlight_topic_without_error(tmp_path):
+    content = _cv_with_highlight(
+        {"topic": "Evaluation Harness", "text": "Scored 300 labelled cases."}
+    )
+    out = pdf.cv_pdf(content, tmp_path / "h.pdf")
+    assert Path(str(out)).stat().st_size > 1000

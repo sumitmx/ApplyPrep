@@ -113,6 +113,13 @@ export default function Tailor() {
     }
   }
 
+  const editSuggestionTopic = (i, topic) => {
+    setReview((prev) => ({
+      ...prev,
+      suggestions: prev.suggestions.map((s, idx) => (idx === i ? { ...s, topic } : s)),
+    }))
+  }
+
   const editSuggestion = (i, text) => {
     setReview((prev) => ({
       ...prev,
@@ -123,9 +130,10 @@ export default function Tailor() {
   const addSuggestion = async (i) => {
     const text = (review.suggestions[i].text || '').trim()
     if (!text) return
+    const topic = (review.suggestions[i].topic || '').trim()
     setAddingSuggestion(i)
     try {
-      setResult(await api.addCvHighlight(id, text))
+      setResult(await api.addCvHighlight(id, text, topic))
       setReview((prev) => ({
         ...prev,
         suggestions: prev.suggestions.filter((_, idx) => idx !== i),
@@ -341,6 +349,14 @@ export default function Tailor() {
                           <p className="reqtag">
                             the advert asks for <b>{s.requirement}</b>
                           </p>
+                        )}
+                        {s.topic && (
+                          <input
+                            className="topicbox"
+                            value={s.topic}
+                            aria-label="Highlight topic"
+                            onChange={(e) => editSuggestionTopic(i, e.target.value)}
+                          />
                         )}
                         <textarea
                           className="skillbox"

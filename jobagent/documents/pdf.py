@@ -4,7 +4,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import ListFlowable, ListItem, Paragraph, SimpleDocTemplate
 
-from . import layout, palette
+from . import layout, palette, tailor
 
 GRAY = "#595959"
 BLACK = "#000000"
@@ -184,7 +184,13 @@ def cv_pdf(content, path, accent=palette.DEFAULT_ACCENT):
             flow.append(_bullets([_esc(t) for t in texts], styles["bullet"]))
 
         elif kind == "highlights":
-            flow.append(_bullets([_esc(item) for item in section["items"]], styles["bullet"]))
+            texts = []
+            for item in section["items"]:
+                topic, text = tailor.highlight_parts(item)
+                texts.append(
+                    ("<b>" + _esc(topic) + "</b> - " if topic else "") + _esc(text)
+                )
+            flow.append(_bullets(texts, styles["bullet"]))
 
     doc.build(flow)
     return path

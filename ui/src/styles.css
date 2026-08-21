@@ -495,3 +495,12 @@ a{color:inherit;text-decoration:none}
    obvious the wording is not generic filler. */
 .reqtag{font-size:11.5px;color:var(--ink-3);margin-bottom:4px}
 .reqtag b{color:var(--ink-2);font-weight:600}
+
+/* The two-or-three word label that leads a highlight bullet. Editable, because
+   the wording ends up on the CV and stays the candidate's call. */
+.topicbox{
+  width:100%;font-family:inherit;font-size:12.5px;font-weight:600;
+  padding:5px 8px;margin-bottom:4px;border:1px solid var(--line);
+  border-radius:var(--r);background:var(--canvas);color:var(--ink);
+}
+.topicbox:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
