@@ -2,17 +2,30 @@ import re
 from pathlib import Path
 
 from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from . import palette
 
 GRAY = RGBColor(0x59, 0x59, 0x59)
 BLACK = RGBColor(0x00, 0x00, 0x00)
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 
 
 def _accent_rgb(accent):
     hex_value = palette.resolve(accent)["hex"].lstrip("#")
     return RGBColor(int(hex_value[0:2], 16), int(hex_value[2:4], 16), int(hex_value[4:6], 16))
+
+
+def _shade(paragraph, hex_value):
+    """Fill a paragraph's background - single-column shading, not a table, so
+    it stays invisible to ATS text extraction while giving a colored band."""
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), hex_value)
+    paragraph._p.get_or_add_pPr().append(shd)
 
 
 def slug(text):
@@ -63,25 +76,33 @@ def _run(para, text, bold=False, color=BLACK, size=9.5):
     return run
 
 
-def _heading(doc, text, color):
+def _heading(doc, text, accent_hex):
     para = doc.add_paragraph()
     para.paragraph_format.space_before = Pt(10)
-    _run(para, text, bold=True, color=color, size=12)
+    para.paragraph_format.space_after = Pt(4)
+    _shade(para, accent_hex)
+    _run(para, text, bold=True, color=WHITE, size=12)
     return para
 
 
 def cv_docx(content, path, accent=palette.DEFAULT_ACCENT):
     doc = _base_document()
     accent_rgb = _accent_rgb(accent)
+    accent_hex = palette.resolve(accent)["hex"].lstrip("#")
     identity = content.get("identity") or {}
 
     name_para = doc.add_paragraph()
-    _run(name_para, identity.get("name", ""), bold=True, color=accent_rgb, size=24)
+    name_para.paragraph_format.space_before = Pt(6)
+    name_para.paragraph_format.space_after = Pt(2)
+    _shade(name_para, accent_hex)
+    _run(name_para, identity.get("name", ""), bold=True, color=WHITE, size=24)
 
     headline = identity.get("headline")
     if headline:
         headline_para = doc.add_paragraph()
-        _run(headline_para, headline, bold=True, color=accent_rgb, size=10.5)
+        headline_para.paragraph_format.space_after = Pt(2)
+        _shade(headline_para, accent_hex)
+        _run(headline_para, headline, bold=True, color=WHITE, size=10.5)
 
     contact = " | ".join(
         str(v) for v in [
@@ -91,17 +112,19 @@ def cv_docx(content, path, accent=palette.DEFAULT_ACCENT):
     )
     if contact:
         contact_para = doc.add_paragraph()
-        _run(contact_para, contact, bold=False, color=GRAY, size=9)
+        contact_para.paragraph_format.space_after = Pt(6)
+        _shade(contact_para, accent_hex)
+        _run(contact_para, contact, bold=False, color=WHITE, size=9)
 
     summary = content.get("summary")
     if summary:
-        _heading(doc, "PROFESSIONAL SUMMARY", accent_rgb)
+        _heading(doc, "PROFESSIONAL SUMMARY", accent_hex)
         para = doc.add_paragraph()
         _run(para, summary, bold=False, color=BLACK, size=9.5)
 
     for section in content.get("sections") or []:
         kind = section["kind"]
-        _heading(doc, section["heading"], accent_rgb)
+        _heading(doc, section["heading"], accent_hex)
 
         if kind == "skills":
             for tier in section["tiers"]:
@@ -140,16 +163,18 @@ def cv_docx(content, path, accent=palette.DEFAULT_ACCENT):
                      bold=False, color=BLACK, size=9.5)
 
         elif kind == "certifications":
-            para = doc.add_paragraph()
-            _run(para, ", ".join(section["items"]), bold=False, color=BLACK, size=9.5)
+            for item in section["items"]:
+                para = doc.add_paragraph(style="List Bullet")
+                _run(para, item, bold=False, color=BLACK, size=9.5)
 
         elif kind == "languages":
-            text = ", ".join(
-                (lang["name"] + " (" + lang["level"] + ")") if lang.get("level") else lang["name"]
-                for lang in section["items"]
-            )
-            para = doc.add_paragraph()
-            _run(para, text, bold=False, color=BLACK, size=9.5)
+            for lang in section["items"]:
+                text = (
+                    (lang["name"] + " (" + lang["level"] + ")")
+                    if lang.get("level") else lang["name"]
+                )
+                para = doc.add_paragraph(style="List Bullet")
+                _run(para, text, bold=False, color=BLACK, size=9.5)
 
         elif kind == "highlights":
             for item in section["items"]:

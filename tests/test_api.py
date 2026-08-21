@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from jobagent import api, chat as chat_module, config, store
+from jobagent.documents import review
 
 
 @pytest.fixture
@@ -273,6 +274,113 @@ def test_generate_without_master_yaml_is_refused(client):
 def test_accept_rejects_unknown_kind(client):
     assert client.post("/api/documents/1/bogus/accept").status_code == 400
     assert client.post("/api/documents/1/cv/accept").status_code == 404
+
+
+def _seed_cv_document(client):
+    conn = store.connect(client.db_path)
+    content = {
+        "identity": {"name": "Alex Morgan"},
+        "summary": "Summary text.",
+        "sections": [
+            {"kind": "skills", "heading": "SKILLS",
+             "tiers": [{"label": "Core", "items": ["Python"]}]},
+            {"kind": "experience", "heading": "PROFESSIONAL EXPERIENCE", "roles": []},
+            {"kind": "education", "heading": "EDUCATION", "items": []},
+        ],
+    }
+    store.save_document(conn, 1, "cv", payload={"structured": content, "rendered": "Alex Morgan"})
+    conn.close()
+
+
+def test_cv_accents_lists_the_palette(client):
+    body = client.get("/api/documents/cv-accents").json()
+    assert body["default"] == "navy"
+    assert len(body["accents"]) == 6
+    assert {a["key"] for a in body["accents"]} >= {"navy", "teal", "burgundy"}
+
+
+def test_export_cv_before_any_draft_is_404(client):
+    assert client.get("/api/documents/1/cv/export").status_code == 404
+
+
+def test_export_cv_rejects_bad_format(client):
+    assert client.get("/api/documents/1/cv/export?fmt=rtf").status_code == 400
+
+
+def test_export_cv_without_structured_payload_is_409(client):
+    conn = store.connect(client.db_path)
+    store.save_document(conn, 1, "cv", payload={"rendered": "Alex Morgan\nStuff"})
+    conn.close()
+    assert client.get("/api/documents/1/cv/export").status_code == 409
+
+
+def test_export_cv_as_docx(client):
+    _seed_cv_document(client)
+    resp = client.get("/api/documents/1/cv/export?fmt=docx")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert "Alex_Morgan_CV.docx" in resp.headers["content-disposition"]
+    assert len(resp.content) > 1000
+
+
+def test_export_cv_as_pdf_with_chosen_accent(client):
+    _seed_cv_document(client)
+    resp = client.get("/api/documents/1/cv/export?fmt=pdf&accent=teal")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF-")
+
+
+def test_review_cv_requires_a_drafted_cv(client):
+    assert client.post("/api/documents/1/cv/review").status_code == 409
+
+
+def test_review_cv_returns_the_ai_review_and_is_reflected_on_reload(client, monkeypatch):
+    _seed_cv_document(client)
+    monkeypatch.setattr(review.agent, "run_json", lambda *a, **k: {
+        "strengths": ["Deep automation background"],
+        "improvements": ["No leadership scope mentioned"],
+        "suggestions": [{"text": "Add a line about mentoring", "why": "shows growth"}],
+    })
+    resp = client.post("/api/documents/1/cv/review")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["strengths"] == ["Deep automation background"]
+    assert body["improvements"] == ["No leadership scope mentioned"]
+    assert body["suggestions"] == [{"text": "Add a line about mentoring", "why": "shows growth"}]
+
+    reloaded = client.get("/api/documents/1").json()
+    assert reloaded["review"] == body
+
+
+def test_add_cv_highlight_is_reflected_in_documents(client):
+    _seed_cv_document(client)
+    resp = client.post("/api/documents/1/cv/highlights", json={"text": "Led a cross-team rollout"})
+    assert resp.status_code == 200
+    body = resp.json()
+    sections = [s for s in body["structured"]["sections"] if s["kind"] == "highlights"]
+    assert sections[0]["items"] == ["Led a cross-team rollout"]
+
+    reloaded = client.get("/api/documents/1").json()
+    assert reloaded["cv"]["payload"]["structured"] == body["structured"]
+
+
+def test_add_cv_highlight_rejects_blank_text(client):
+    _seed_cv_document(client)
+    resp = client.post("/api/documents/1/cv/highlights", json={"text": "   "})
+    assert resp.status_code == 400
+
+
+def test_add_cv_highlight_before_any_draft_is_409(client):
+    resp = client.post("/api/documents/1/cv/highlights", json={"text": "Something"})
+    assert resp.status_code == 409
+
+
+def test_add_cv_highlight_unknown_job_is_404(client):
+    resp = client.post("/api/documents/999/cv/highlights", json={"text": "Something"})
+    assert resp.status_code == 404
 
 
 def test_no_scoring_or_tailoring_routes(client):

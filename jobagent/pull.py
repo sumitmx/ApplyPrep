@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 from . import normalize as norm
 from . import profile as profile_module
@@ -256,3 +257,40 @@ def regate(conn, cfg):
         counts[status] = counts.get(status, 0) + 1
     store.set_gate_many(conn, updates)
     return {"total": sum(counts.values()), "changed": len(updates), "counts": counts}
+
+
+def prune(conn, days=7, apply=False):
+    """Remove job postings older than `days` (by posted_at) that were never
+    engaged with - not shortlisted, no application, no saved document. Jobs
+    with no posted_at are left alone since their age can't be determined.
+    Dry run by default; pass apply=True to actually delete."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+
+    referenced = set()
+    for table in ("application", "document"):
+        for row in conn.execute("SELECT DISTINCT job_id FROM " + table):
+            referenced.add(row["job_id"])
+
+    candidates = conn.execute(
+        "SELECT id FROM job WHERE posted_at IS NOT NULL AND posted_at < ?"
+        " AND status != 'shortlisted'",
+        (cutoff,),
+    ).fetchall()
+
+    drop = [r["id"] for r in candidates if r["id"] not in referenced]
+    kept = [r["id"] for r in candidates if r["id"] in referenced]
+
+    result = {
+        "cutoff": cutoff,
+        "eligible": len(drop),
+        "kept_because_referenced": len(kept),
+        "applied": False,
+    }
+    if apply and drop:
+        for table in ("job_reach", "score", "job_chat"):
+            conn.executemany("DELETE FROM " + table + " WHERE job_id = ?", [(i,) for i in drop])
+        conn.executemany("DELETE FROM job WHERE id = ?", [(i,) for i in drop])
+        conn.commit()
+        result["applied"] = True
+        result["removed"] = len(drop)
+    return result

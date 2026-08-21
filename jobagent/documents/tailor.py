@@ -34,7 +34,11 @@ Actions:
   pulled  a bullet not usually near the top, surfaced because this job asks for it
 
 Include every bullet you want on the tailored CV plus the ones you drop. Aim for
-eight to twelve entries in total.
+fourteen to twenty entries in total, filling a full two-page CV rather than a
+sparse one. Do not concentrate keeps on the most recent role alone: every role
+that has bullets available should keep at least two to three of them (all of
+them if it has three or fewer) unless truly irrelevant to this posting, so the
+CV reads as balanced across the candidate's career rather than front-loaded.
 
 AVAILABLE BULLETS
 {bullets}
@@ -267,6 +271,28 @@ def render_cv(changes, master):
     return flatten_cv(build_cv_content(changes, master))
 
 
+def derive_cv_result(content, changes, note, job, master):
+    """Build the full CV payload (rendered text, keywords, ats score, lint
+    checks) from already-decided structured content. Shared by tailor_cv()
+    and by service.add_cv_highlight(), which mutates content after the fact
+    and needs the same derived fields recomputed."""
+    rendered = flatten_cv(content)
+    keywords = coverage.analyse(job.get("description"), rendered, master)
+    return {
+        "changes": changes,
+        "note": note,
+        "rendered": rendered,
+        "structured": content,
+        "parse_safety": lint.check(rendered, changes),
+        "keywords": keywords,
+        "ats_score": _ats_score(keywords["counts"]),
+        "counts": {
+            action: sum(1 for c in changes if c["action"] == action)
+            for action in guard.ACTIONS
+        },
+    }
+
+
 def tailor_cv(job, master, timeout=agent.DEFAULT_TIMEOUT,
               provider=agent.DEFAULT_PROVIDER):
     prompt = _fill(CV_PROMPT, {
@@ -280,21 +306,7 @@ def tailor_cv(job, master, timeout=agent.DEFAULT_TIMEOUT,
     data = agent.run_json(prompt, timeout, provider)
     changes = guard.check(data.get("changes"), master)
     content = build_cv_content(changes, master)
-    rendered = flatten_cv(content)
-    keywords = coverage.analyse(job.get("description"), rendered, master)
-    return {
-        "changes": changes,
-        "note": data.get("note"),
-        "rendered": rendered,
-        "structured": content,
-        "parse_safety": lint.check(rendered, changes),
-        "keywords": keywords,
-        "ats_score": _ats_score(keywords["counts"]),
-        "counts": {
-            action: sum(1 for c in changes if c["action"] == action)
-            for action in guard.ACTIONS
-        },
-    }
+    return derive_cv_result(content, changes, data.get("note"), job, master)
 
 
 def _ats_score(counts):

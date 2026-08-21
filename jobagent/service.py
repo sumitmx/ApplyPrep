@@ -1,3 +1,4 @@
+import io
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -8,7 +9,7 @@ from . import chat as chat_module
 from . import dedup as dedup_module
 from . import documents as documents_module
 from . import profile, rating, skills as skills_module, store
-from .documents import palette, render
+from .documents import palette, pdf, render, tailor
 from .documents.guard import known_bullets
 
 MARK_ACTIONS = {
@@ -98,7 +99,7 @@ def badges(row):
     elif sponsorship == "denied":
         out.append({"text": "no visa sponsorship", "tone": "rust", "strong": True})
     else:
-        out.append({"text": "visa not mentioned", "tone": "amber", "strong": True})
+        out.append({"text": "visa not mentioned", "tone": "rust", "strong": True})
     if row.get("language_required") == "de":
         out.append({"text": "German needed", "tone": "amber", "strong": True})
     else:
@@ -899,6 +900,8 @@ def generate_cv(conn, job_id, master, timeout=None):
         payload=result,
         master_version=(master.get("identity") or {}).get("name"),
     )
+    conn.execute("DELETE FROM document WHERE job_id = ? AND kind = 'review'", (job_id,))
+    conn.commit()
     mark_applied_if_new(conn, job_id)
     result["job"] = {"id": job["id"], "title": job["title"], "company": job["company"]}
     return result
@@ -982,6 +985,90 @@ def accept_document(conn, job_id, kind, master, documents_dir="documents",
         "job_id": job_id, "kind": kind, "accepted": True, "path": str(path),
         "application_status": application["status"] if application else None,
     }
+
+
+class ExportUnavailable(Exception):
+    pass
+
+
+def export_cv(conn, job_id, fmt, accent=palette.DEFAULT_ACCENT):
+    row = store.get_document(conn, job_id, "cv")
+    if not row:
+        return None
+    payload = _json(row.get("payload")) or {}
+    content = payload.get("structured")
+    if not content:
+        raise ExportUnavailable(
+            "This draft was made before downloads were added. Write it again."
+        )
+    buf = io.BytesIO()
+    (render.cv_docx if fmt == "docx" else pdf.cv_pdf)(content, buf, accent=accent)
+    buf.seek(0)
+    identity = content.get("identity") or {}
+    name_slug = re.sub(r"[^A-Za-z0-9]+", "_", identity.get("name") or "CV").strip("_")
+    return {"data": buf, "filename": name_slug + "_CV." + fmt}
+
+
+class NoTailoredCvError(Exception):
+    pass
+
+
+def review_cv(conn, job_id, master, timeout=None):
+    job = job_detail(conn, job_id, master)
+    if job is None:
+        return None
+    cv_row = store.get_document(conn, job_id, "cv")
+    payload = _json(cv_row.get("payload")) if cv_row else None
+    cv_text = (payload or {}).get("rendered")
+    if not cv_text:
+        raise NoTailoredCvError("Write a CV for this job first, then review it.")
+    kwargs = {"timeout": timeout} if timeout else {}
+    result = documents_module.review_cv(job, cv_text, provider=get_ai_provider(conn), **kwargs)
+    store.save_document(conn, job_id, "review", payload=result)
+    return result
+
+
+def stored_review(conn, job_id):
+    row = store.get_document(conn, job_id, "review")
+    if not row:
+        return None
+    return _json(row.get("payload"))
+
+
+def add_cv_highlight(conn, job_id, master, text):
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("Nothing to add.")
+    job = job_detail(conn, job_id, master)
+    if job is None:
+        return None
+    cv_row = store.get_document(conn, job_id, "cv")
+    payload = _json(cv_row.get("payload")) if cv_row else None
+    content = (payload or {}).get("structured")
+    if not content:
+        raise ExportUnavailable(
+            "This draft was made before highlights were added. Write it again, then try again."
+        )
+    sections = content.get("sections") or []
+    highlights = next((s for s in sections if s["kind"] == "highlights"), None)
+    if highlights is None:
+        highlights = {"kind": "highlights", "heading": "ADDITIONAL HIGHLIGHTS", "items": []}
+        exp_index = next(
+            (i for i, s in enumerate(sections) if s["kind"] == "experience"),
+            len(sections) - 1,
+        )
+        sections.insert(exp_index + 1, highlights)
+    highlights["items"].append(tailor.ascii_safe(text))
+    content["sections"] = sections
+    result = tailor.derive_cv_result(
+        content, payload.get("changes") or [], payload.get("note"), job, master
+    )
+    store.save_document(
+        conn, job_id, "cv",
+        payload=result,
+        master_version=((master or {}).get("identity") or {}).get("name"),
+    )
+    return result
 
 
 def discard_document(conn, job_id, kind):

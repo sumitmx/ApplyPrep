@@ -74,6 +74,12 @@ export default function JobDetail() {
   const mark = async (action) => {
     try {
       await api.mark(id, action)
+      if (action === 'hide') {
+        const neighbours = job.neighbours || {}
+        const target = neighbours.next || neighbours.previous
+        navigate(target ? '/jobs/' + target : '/jobs')
+        return
+      }
       load()
     } catch (e) {
       setError(e)
@@ -130,6 +136,22 @@ export default function JobDetail() {
             </a>
           )}
         </div>
+      </div>
+
+      <div className="btns" style={{ marginBottom: 14 }}>
+        <button className="btn" onClick={rate} disabled={rating}>
+          {rating ? 'Rating...' : (job.scored ? 'Rate again' : 'Rate now')}
+        </button>
+        <Link className="btn pri" to={'/jobs/' + job.id + '/tailor'}>Tailor my CV</Link>
+        <Link className="btn" to={'/jobs/' + job.id + '/letter'}>Write cover letter</Link>
+        <button
+          className={'btn' + (job.status === 'shortlisted' ? ' pri' : '')}
+          onClick={() => mark(job.status === 'shortlisted' ? 'reset' : 'shortlist')}
+        >
+          {job.status === 'shortlisted' ? 'Saved' : 'Save this one'}
+        </button>
+        <button className="btn" onClick={() => mark('hide')}>Not interested</button>
+        <Link className="btn" to="/jobs">Back to all jobs</Link>
       </div>
 
       <div className="two">
@@ -400,22 +422,6 @@ export default function JobDetail() {
           <div className="pbody"><p className="muted">{job.rationale}</p></div>
         </Panel>
       )}
-
-      <div className="btns">
-        <button className="btn" onClick={rate} disabled={rating}>
-          {rating ? 'Rating...' : (job.scored ? 'Rate again' : 'Rate now')}
-        </button>
-        <Link className="btn pri" to={'/jobs/' + job.id + '/tailor'}>Tailor my CV</Link>
-        <Link className="btn" to={'/jobs/' + job.id + '/letter'}>Write cover letter</Link>
-        <button
-          className={'btn' + (job.status === 'shortlisted' ? ' pri' : '')}
-          onClick={() => mark(job.status === 'shortlisted' ? 'reset' : 'shortlist')}
-        >
-          {job.status === 'shortlisted' ? 'Saved' : 'Save this one'}
-        </button>
-        <button className="btn" onClick={() => mark('hide')}>Not interested</button>
-        <Link className="btn" to="/jobs">Back to all jobs</Link>
-      </div>
 
       {showChat && (
         <AskAIChat jobId={job.id} jobTitle={job.title} onClose={() => setShowChat(false)} />

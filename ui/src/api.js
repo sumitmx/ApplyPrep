@@ -83,11 +83,24 @@ export const api = {
   documents: (id) => request('/documents/' + id),
   generateCv: (id) => request('/documents/' + id + '/cv', { method: 'POST' }),
   generateLetter: (id) => request('/documents/' + id + '/letter', { method: 'POST' }),
-  saveDocument: (id, kind) =>
-    request('/documents/' + id + '/' + kind + '/accept', { method: 'POST' }),
+  saveDocument: (id, kind, accent) =>
+    request(
+      '/documents/' + id + '/' + kind + '/accept'
+        + (accent ? '?accent=' + accent : ''),
+      { method: 'POST' },
+    ),
   discardDocument: (id, kind) =>
     request('/documents/' + id + '/' + kind, { method: 'DELETE' }),
   downloadUrl: (id, kind) => '/api/documents/' + id + '/' + kind + '/download',
+  cvAccents: () => request('/documents/cv-accents'),
+  exportCvUrl: (id, fmt, accent) =>
+    '/api/documents/' + id + '/cv/export?fmt=' + fmt + '&accent=' + accent,
+  reviewCv: (id) => request('/documents/' + id + '/cv/review', { method: 'POST' }),
+  addCvHighlight: (id, text) =>
+    request('/documents/' + id + '/cv/highlights', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
   pull: (body) =>
     request('/pull', { method: 'POST', body: JSON.stringify(body || {}) }),
 }

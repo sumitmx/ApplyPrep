@@ -116,3 +116,60 @@ def test_nothing_is_written_to_disk_before_save(conn, tmp_path):
 def test_discard_on_nothing_returns_none(conn):
     assert service.discard_document(conn, 1, "cv") is None
     assert service.accept_document(conn, 1, "cv", MASTER) is None
+
+
+def _fake_tailor_response():
+    return {
+        "changes": [
+            {"id": "exp.northstar.b1", "action": "kept"},
+            {"id": "exp.meridian.b1", "action": "rewrote", "text": "Reworded bullet"},
+        ],
+        "note": "Leaned into automation delivery.",
+    }
+
+
+def test_generate_cv_clears_a_stale_stored_review(conn, monkeypatch):
+    monkeypatch.setattr(tailor.agent, "run_json", lambda *a, **k: _fake_tailor_response())
+    service.generate_cv(conn, 1, MASTER)
+    store.save_document(conn, 1, "review",
+                        payload={"strengths": ["x"], "improvements": [], "suggestions": []})
+    assert service.stored_review(conn, 1) is not None
+
+    service.generate_cv(conn, 1, MASTER)
+    assert service.stored_review(conn, 1) is None
+
+
+def test_add_cv_highlight_appends_into_one_section_across_repeated_calls(conn, monkeypatch):
+    monkeypatch.setattr(tailor.agent, "run_json", lambda *a, **k: _fake_tailor_response())
+    service.generate_cv(conn, 1, MASTER)
+
+    first = service.add_cv_highlight(conn, 1, MASTER, "Led a cross-team automation initiative")
+    sections = [s for s in first["structured"]["sections"] if s["kind"] == "highlights"]
+    assert len(sections) == 1
+    assert sections[0]["heading"] == "ADDITIONAL HIGHLIGHTS"
+    assert sections[0]["items"] == ["Led a cross-team automation initiative"]
+    assert "Led a cross-team automation initiative" in first["rendered"]
+    assert first["ats_score"] is not None
+
+    second = service.add_cv_highlight(conn, 1, MASTER, "Mentored two junior engineers")
+    sections = [s for s in second["structured"]["sections"] if s["kind"] == "highlights"]
+    assert len(sections) == 1
+    assert sections[0]["items"] == [
+        "Led a cross-team automation initiative", "Mentored two junior engineers",
+    ]
+
+    stored = service.stored_document(conn, 1, "cv")
+    assert stored["payload"]["structured"] == second["structured"]
+
+
+def test_add_cv_highlight_rejects_blank_text(conn, monkeypatch):
+    monkeypatch.setattr(tailor.agent, "run_json", lambda *a, **k: _fake_tailor_response())
+    service.generate_cv(conn, 1, MASTER)
+    with pytest.raises(ValueError):
+        service.add_cv_highlight(conn, 1, MASTER, "   ")
+
+
+def test_add_cv_highlight_raises_on_legacy_payload_without_structured(conn):
+    store.save_document(conn, 1, "cv", payload={"rendered": "Alex Morgan\nStuff"})
+    with pytest.raises(service.ExportUnavailable):
+        service.add_cv_highlight(conn, 1, MASTER, "Some text")

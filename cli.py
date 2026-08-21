@@ -26,6 +26,10 @@ def main():
     p_dedup.add_argument("--threshold", type=int, default=dedup.THRESHOLD)
     p_dedup.add_argument("--limit", type=int, default=25)
 
+    p_prune = sub.add_parser("prune")
+    p_prune.add_argument("--days", type=int, default=7)
+    p_prune.add_argument("--apply", action="store_true")
+
     p_serve = sub.add_parser("serve")
     p_serve.add_argument("--port", type=int, default=None)
     p_serve.add_argument("--no-browser", action="store_true")
@@ -95,6 +99,14 @@ def main():
             return
         result = dedup.apply(conn, combined)
         print(json.dumps(result, indent=2))
+        return
+
+    if args.cmd == "prune":
+        result = pull.prune(conn, args.days, apply=args.apply)
+        print(json.dumps(result, indent=2))
+        if not args.apply:
+            print("")
+            print("dry run, nothing changed. add --apply to delete these")
         return
 
     if args.cmd == "rebuild":

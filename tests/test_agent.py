@@ -60,6 +60,22 @@ def test_codex_argv_is_unchanged(monkeypatch):
     assert "jobagent_codex_" in argv[6]
 
 
+def test_codex_failure_surfaces_the_tail_not_the_echoed_prompt(monkeypatch):
+    def fake_run(argv, **kwargs):
+        proc = _FakeProc(argv)
+        proc.returncode = 1
+        proc.stdout = ""
+        proc.stderr = ("prompt echo " * 50) + "ERROR: You've hit your usage limit."
+        return proc
+
+    monkeypatch.setattr(agent.subprocess, "run", fake_run)
+    monkeypatch.setattr(agent, "executable", lambda provider=agent.DEFAULT_PROVIDER: "codex")
+
+    with pytest.raises(agent.AgentError) as exc:
+        agent.run("hello", provider="openai")
+    assert "You've hit your usage limit" in str(exc.value)
+
+
 def test_model_shows_pinned_model_for_opus5():
     assert agent.model("claude-opus5") == "claude-opus-5"
 

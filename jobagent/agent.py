@@ -76,7 +76,13 @@ def _configured_model_codex():
     return str(value) if value else None
 
 
-_MODEL_READERS = {"claude": _configured_model_claude, "openai": _configured_model_codex}
+# Resolved at call time, not import time, so the reader can be swapped out.
+# Binding the function objects directly here would freeze whichever version
+# existed at import, ignoring any later reassignment.
+_MODEL_READERS = {
+    "claude": lambda: _configured_model_claude(),
+    "openai": lambda: _configured_model_codex(),
+}
 
 
 def model(provider=DEFAULT_PROVIDER):
@@ -142,7 +148,10 @@ def _run_codex(exe, prompt, timeout):
         except (OSError, UnicodeError) as exc:
             raise AgentError("Could not talk to the codex command. " + str(exc)[:300])
         if proc.returncode != 0:
-            detail = (proc.stderr or proc.stdout or "").strip()[:400]
+            # codex echoes the whole input prompt back before any error text, so
+            # for real (long) prompts the actual reason lives at the end, not the
+            # start - take the tail rather than the head.
+            detail = (proc.stderr or proc.stdout or "").strip()[-400:]
             raise AgentError(
                 "ChatGPT exited with code " + str(proc.returncode) + ". " + detail
             )

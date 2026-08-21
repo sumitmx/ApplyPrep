@@ -1,11 +1,12 @@
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import agent, config, documents, profile, pull, service, store
+from .documents import palette
 
 UI_DIST = Path(__file__).resolve().parents[1] / "ui" / "dist"
 
@@ -45,6 +46,10 @@ class SkillEntry(BaseModel):
 
 class SaveSkillsBody(BaseModel):
     skills: list[SkillEntry]
+
+
+class HighlightBody(BaseModel):
+    text: str
 
 
 def create_app(cfg=None):
@@ -390,6 +395,13 @@ def create_app(cfg=None):
         finally:
             conn.close()
 
+    @app.get("/api/documents/cv-accents")
+    def get_cv_accents():
+        return {
+            "accents": [{"key": k, **v} for k, v in palette.ACCENTS.items()],
+            "default": palette.DEFAULT_ACCENT,
+        }
+
     @app.get("/api/documents/{job_id}")
     def get_documents(job_id: int):
         conn = db()
@@ -399,6 +411,7 @@ def create_app(cfg=None):
                 "agent_available": agent.available(service.get_ai_provider(conn)),
                 "cv": service.stored_document(conn, job_id, "cv"),
                 "letter": service.stored_document(conn, job_id, "letter"),
+                "review": service.stored_review(conn, job_id),
             }
         finally:
             conn.close()
@@ -446,12 +459,12 @@ def create_app(cfg=None):
         return kind
 
     @app.post("/api/documents/{job_id}/{kind}/accept")
-    def post_accept(job_id: int, kind: str):
+    def post_accept(job_id: int, kind: str, accent: str = palette.DEFAULT_ACCENT):
         conn = db()
         try:
             result = service.accept_document(
                 conn, job_id, _kind(kind), master(),
-                cfg.get("documents_dir", "documents"),
+                cfg.get("documents_dir", "documents"), accent=accent,
             )
             if result is None:
                 raise HTTPException(status_code=404, detail="nothing written yet")
@@ -493,6 +506,60 @@ def create_app(cfg=None):
             media_type="application/vnd.openxmlformats-officedocument."
                        "wordprocessingml.document",
         )
+
+    @app.get("/api/documents/{job_id}/cv/export")
+    def export_cv(job_id: int, fmt: str = "docx", accent: str = palette.DEFAULT_ACCENT):
+        if fmt not in ("docx", "pdf"):
+            raise HTTPException(status_code=400, detail="fmt must be docx or pdf")
+        conn = db()
+        try:
+            try:
+                result = service.export_cv(conn, job_id, fmt, accent)
+            except service.ExportUnavailable as exc:
+                raise HTTPException(status_code=409, detail=str(exc))
+        finally:
+            conn.close()
+        if result is None:
+            raise HTTPException(status_code=404, detail="nothing written yet")
+        media = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            if fmt == "docx" else "application/pdf"
+        )
+        return StreamingResponse(
+            result["data"], media_type=media,
+            headers={"Content-Disposition": 'attachment; filename="' + result["filename"] + '"'},
+        )
+
+    @app.post("/api/documents/{job_id}/cv/review")
+    def post_review(job_id: int):
+        conn = db()
+        try:
+            _require_agent(conn)
+            result = service.review_cv(conn, job_id, master())
+        except service.NoTailoredCvError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except agent.AgentError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        finally:
+            conn.close()
+        if result is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return result
+
+    @app.post("/api/documents/{job_id}/cv/highlights")
+    def post_highlight(job_id: int, body: HighlightBody):
+        conn = db()
+        try:
+            result = service.add_cv_highlight(conn, job_id, master(), body.text)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except service.ExportUnavailable as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        finally:
+            conn.close()
+        if result is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return result
 
     @app.post("/api/pull")
     def post_pull(body: PullBody | None = None):
