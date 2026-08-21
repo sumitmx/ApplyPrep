@@ -34,6 +34,8 @@ export const api = {
     return request('/jobs' + (s ? '?' + s : ''))
   },
   job: (id) => request('/jobs/' + id),
+  pasteJob: (fields) =>
+    request('/jobs/paste', { method: 'POST', body: JSON.stringify(fields) }),
   rate: (id) => request('/jobs/' + id + '/rate', { method: 'POST' }),
   estimate: (id, kind) => request('/jobs/' + id + '/estimate/' + kind, { method: 'POST' }),
   mark: (id, action, reason) =>

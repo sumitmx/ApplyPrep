@@ -272,18 +272,37 @@ def prune(conn, days=7, apply=False):
             referenced.add(row["job_id"])
 
     candidates = conn.execute(
-        "SELECT id FROM job WHERE posted_at IS NOT NULL AND posted_at < ?"
-        " AND status != 'shortlisted'",
+        "SELECT id, source_ids FROM job WHERE posted_at IS NOT NULL"
+        " AND posted_at < ? AND status != 'shortlisted'",
         (cutoff,),
     ).fetchall()
 
-    drop = [r["id"] for r in candidates if r["id"] not in referenced]
-    kept = [r["id"] for r in candidates if r["id"] in referenced]
+    # Hand-pasted jobs are never swept up. They took deliberate effort to enter
+    # and cannot be re-pulled from anywhere, so ageing out would lose them.
+    row = conn.execute(
+        "SELECT id FROM source WHERE name = ?", (PASTED_SOURCE,)
+    ).fetchone()
+    pasted_id = row["id"] if row else None
+
+    def _pasted(candidate):
+        if pasted_id is None:
+            return False
+        try:
+            return pasted_id in json.loads(candidate["source_ids"] or "[]")
+        except (TypeError, ValueError):
+            return False
+
+    protected = [r for r in candidates if _pasted(r)]
+    ageing = [r for r in candidates if not _pasted(r)]
+
+    drop = [r["id"] for r in ageing if r["id"] not in referenced]
+    kept = [r["id"] for r in ageing if r["id"] in referenced]
 
     result = {
         "cutoff": cutoff,
         "eligible": len(drop),
         "kept_because_referenced": len(kept),
+        "kept_because_pasted": len(protected),
         "applied": False,
     }
     if apply and drop:
@@ -294,3 +313,61 @@ def prune(conn, days=7, apply=False):
         result["applied"] = True
         result["removed"] = len(drop)
     return result
+
+
+PASTED_SOURCE = "pasted"
+
+
+def pasted_source_id(conn):
+    """The synthetic source every hand-entered job is filed under."""
+    return store.source_id(conn, PASTED_SOURCE, "manual")
+
+
+def paste_job(conn, cfg, fields, master=None, prof=None):
+    """Create a job from a description pasted in by hand.
+
+    LinkedIn, Upwork and remote.com cannot be scraped, so this is how a posting
+    from one of them enters the pipeline. It runs the same normalisation as a
+    pulled job - location, sponsorship, language and agency are all detected
+    from the text - so the detail page, rating, CV tailoring and cover letter
+    behave identically from here on.
+
+    The gate is the one deliberate difference. Pulled jobs are filtered on
+    title and keyword rules because nobody chose them; this one was pasted on
+    purpose, so it always passes and is never silently hidden.
+    """
+    title = (fields.get("title") or "").strip()
+    company = (fields.get("company") or "").strip()
+    body = (fields.get("description") or "").strip()
+    missing = [
+        name for name, value in
+        (("title", title), ("company", company), ("description", body))
+        if not value
+    ]
+    if missing:
+        raise ValueError("these are required: " + ", ".join(missing))
+
+    src_id = pasted_source_id(conn)
+    # An empty url is fine: the schema allows it, the UI hides the link, and
+    # the dedup key falls back to title+company+city so pasting the same job
+    # twice reopens the first one instead of creating a duplicate.
+    url = (fields.get("url") or "").strip()
+    job = norm.build_job(
+        PASTED_SOURCE,
+        {"external_id": None, "url": url},
+        src_id,
+        title=title,
+        company=company,
+        location=(fields.get("location") or "").strip(),
+        body=body,
+        posted=fields.get("posted_at") or datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        ),
+        url=url,
+        employment_type=(fields.get("employment_type") or "").strip() or None,
+    )
+    job_id, is_new = store.upsert_job(conn, job)
+    if is_new:
+        store.set_gate(conn, job_id, "passed", "you added this one by hand")
+        store.save_reach(conn, job_id, reach_module.compute(job, cfg, prof))
+    return {"job_id": job_id, "is_new": is_new, "title": title, "company": company}

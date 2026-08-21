@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
-import { Empty, ErrorBox, Loading, Panel, Pill, Score, Toast } from '../components'
+import { Empty, ErrorBox, Loading, Panel, PasteJobModal, Pill, Score, Toast }
+  from '../components'
 
 const GATES = [
   ['passed', 'worth a look'],
@@ -87,7 +88,9 @@ export default function Jobs() {
   const [selected, setSelected] = useState(() => new Set())
   const [rating, setRating] = useState(null)
   const [previewJob, setPreviewJob] = useState(null)
+  const [pasting, setPasting] = useState(false)
   const previewCloseTimer = useRef(null)
+  const navigate = useNavigate()
 
   const PAGE_SIZE = 25
 
@@ -244,15 +247,30 @@ export default function Jobs() {
             sponsorship, language and how old the ad is.
           </p>
         </div>
-        {data && (
-          <span className="countpill">
-            {data.total === 0
-              ? '0 jobs'
-              : 'showing ' + (data.offset + 1) + '-' + (data.offset + data.jobs.length) +
-                ' of ' + data.total}
-          </span>
-        )}
+        <div className="sheadside">
+          <button className="btn pri" type="button" onClick={() => setPasting(true)}>
+            Paste a job description
+          </button>
+          {data && (
+            <span className="countpill">
+              {data.total === 0
+                ? '0 jobs'
+                : 'showing ' + (data.offset + 1) + '-' + (data.offset + data.jobs.length) +
+                  ' of ' + data.total}
+            </span>
+          )}
+        </div>
       </div>
+
+      {pasting && (
+        <PasteJobModal
+          onClose={() => setPasting(false)}
+          onCreated={(res) => {
+            setPasting(false)
+            navigate('/jobs/' + res.job_id)
+          }}
+        />
+      )}
 
       <div className="filters">
         <label htmlFor="f-gate">Show</label>

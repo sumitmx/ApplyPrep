@@ -310,3 +310,92 @@ export function AskAIChat({ jobId, jobTitle, onClose }) {
     </div>
   )
 }
+
+export function PasteJobModal({ onClose, onCreated }) {
+  const [fields, setFields] = useState({
+    title: '', company: '', url: '', location: '', description: '',
+  })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const set = (key) => (e) => setFields((f) => ({ ...f, [key]: e.target.value }))
+  const ready = fields.title.trim() && fields.company.trim() && fields.description.trim()
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!ready || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      onCreated(await api.pasteJob(fields))
+    } catch (err) {
+      setError(err)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="modalbackdrop" onClick={onClose}>
+      <form className="modalcard" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <div className="chathead">
+          <div>
+            <b>Paste a job description</b>
+            <div className="muted" style={{ fontSize: 12 }}>
+              For boards that cannot be pulled automatically, like LinkedIn or
+              Upwork. It behaves like any other job once added.
+            </div>
+          </div>
+          <button className="chatx" type="button" onClick={onClose} aria-label="Close">x</button>
+        </div>
+
+        <div className="modalbody">
+          <div className="two">
+            <div className="field">
+              <label htmlFor="p-title">Job title</label>
+              <input id="p-title" value={fields.title} onChange={set('title')}
+                     placeholder="Principal Architect" autoFocus />
+            </div>
+            <div className="field">
+              <label htmlFor="p-company">Company</label>
+              <input id="p-company" value={fields.company} onChange={set('company')}
+                     placeholder="Acme GmbH" />
+            </div>
+          </div>
+
+          <div className="two">
+            <div className="field">
+              <label htmlFor="p-location">Location <span className="muted">optional</span></label>
+              <input id="p-location" value={fields.location} onChange={set('location')}
+                     placeholder="Berlin, Germany" />
+            </div>
+            <div className="field">
+              <label htmlFor="p-url">Link <span className="muted">optional</span></label>
+              <input id="p-url" value={fields.url} onChange={set('url')}
+                     placeholder="https://..." />
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="p-desc">Job description</label>
+            <textarea id="p-desc" rows={12} value={fields.description}
+                      onChange={set('description')}
+                      placeholder="Paste the whole advert here. Sponsorship, language and location are read straight out of this text." />
+          </div>
+
+          <p className="muted" style={{ fontSize: 12 }}>
+            Location is worth filling in when the advert does not spell it out,
+            since it drives the country and visa reachability scoring.
+          </p>
+        </div>
+
+        <ErrorBox error={error} />
+        <div className="modalfoot">
+          <button className="btn" type="button" onClick={onClose}>Cancel</button>
+          <button className="btn pri" type="submit" disabled={!ready || busy}>
+            {busy ? 'Adding...' : 'Add this job'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}

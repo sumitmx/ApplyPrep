@@ -104,6 +104,8 @@ a{color:inherit;text-decoration:none}
 .shead{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:20px}
 .shead h2{font-size:19px}
 .shead p{color:var(--ink-2);font-size:13px;margin-top:3px}
+.sheadside{flex-shrink:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  justify-content:flex-end}
 .countpill{flex-shrink:0;background:var(--shell);color:#fff;font-family:'Space Grotesk',sans-serif;
   font-size:13px;font-weight:500;padding:6px 13px;border-radius:999px;white-space:nowrap}
 
@@ -437,3 +439,36 @@ a{color:inherit;text-decoration:none}
   .main{padding:20px}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* Centred modal, used by the paste-a-job form. The chat drawer slides in from
+   the side because it sits beside the job you are reading; a form has no such
+   anchor, so it takes the middle of the screen. */
+.modalbackdrop{
+  position:fixed;inset:0;z-index:60;background:rgba(20,23,26,0.42);
+  display:flex;align-items:center;justify-content:center;padding:24px;
+}
+.modalcard{
+  width:min(660px,100%);max-height:calc(100vh - 48px);background:var(--paper);
+  border:1px solid var(--line);border-radius:var(--r);
+  display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(20,23,26,.28);
+}
+.modalbody{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.modalfoot{
+  display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;
+  border-top:1px solid var(--line);
+}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font-size:12px;font-weight:600;color:var(--ink-2)}
+.field label .muted{font-weight:400}
+.field input,.field textarea{
+  width:100%;font-family:inherit;font-size:13px;padding:8px 10px;
+  border:1px solid var(--line);border-radius:var(--r);
+  background:var(--canvas);color:var(--ink);
+}
+.field textarea{resize:vertical;line-height:1.6}
+.field input:focus-visible,.field textarea:focus-visible{
+  outline:2px solid var(--pine);outline-offset:1px;
+}
+@media (max-width:620px){
+  .modalcard .two{grid-template-columns:1fr}
+}

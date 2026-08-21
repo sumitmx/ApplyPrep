@@ -30,6 +30,15 @@ class AskBody(BaseModel):
     question: str
 
 
+class PasteJobBody(BaseModel):
+    title: str
+    company: str
+    description: str
+    url: str | None = None
+    location: str | None = None
+    employment_type: str | None = None
+
+
 class SettingsBody(BaseModel):
     ai_provider: str
 
@@ -124,6 +133,24 @@ def create_app(cfg=None):
                                 applied=applied,
                                 limit=min(limit, 200), offset=offset,
                                 limits=service.band_limits(cfg))
+        finally:
+            conn.close()
+
+    @app.post("/api/jobs/paste")
+    def post_paste_job(body: PasteJobBody):
+        """Add a job from a description pasted by hand.
+
+        For boards that cannot be scraped - LinkedIn, Upwork, remote.com. The
+        job it creates is indistinguishable from a pulled one downstream.
+        """
+        conn = db()
+        try:
+            return pull.paste_job(
+                conn, cfg, body.model_dump(), master(),
+                profile.load_profile(cfg.get("profile_path", "profile.yaml")),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         finally:
             conn.close()
 

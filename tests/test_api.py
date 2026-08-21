@@ -502,3 +502,35 @@ def test_ask_persists_chat_and_is_readable_via_chat_endpoint(client, monkeypatch
 
 def test_ask_rejects_empty_question(client):
     assert client.post("/api/jobs/1/ask", json={"question": "  "}).status_code == 400
+
+
+PASTE = {
+    "title": "Principal Automation Architect",
+    "company": "Acme GmbH",
+    "location": "Berlin, Germany",
+    "description": "Visa sponsorship is available. You will own the platform.",
+}
+
+
+def test_pasting_a_job_returns_an_id_that_opens_like_any_other_job(client):
+    """The point of pasting is to reach the normal job page, so the id it hands
+    back has to work against the same endpoint the job list links to."""
+    created = client.post("/api/jobs/paste", json=PASTE).json()
+    assert created["is_new"] is True
+
+    job = client.get("/api/jobs/" + str(created["job_id"])).json()
+    assert job["title"] == PASTE["title"]
+    assert job["company"] == PASTE["company"]
+    assert job["country"] == "DE"
+
+
+def test_a_pasted_job_shows_up_in_the_jobs_list(client):
+    created = client.post("/api/jobs/paste", json=PASTE).json()
+    listed = client.get("/api/jobs?gate=passed&limit=100").json()
+    assert created["job_id"] in [j["id"] for j in listed["jobs"]]
+
+
+def test_pasting_without_a_description_is_rejected(client):
+    resp = client.post("/api/jobs/paste", json={**PASTE, "description": "  "})
+    assert resp.status_code == 400
+    assert "description" in resp.json()["detail"]
