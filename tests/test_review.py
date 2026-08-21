@@ -17,7 +17,8 @@ def test_review_cv_filters_blank_items(monkeypatch):
         "strengths": ["Deep RPA background", "  ", "", "Strong Python delivery"],
         "improvements": ["No cloud certifications listed", ""],
         "suggestions": [
-            {"text": "Add a line about leading the UiPath rollout", "why": "matches the posting"},
+            {"text": "Add a line about leading the UiPath rollout",
+             "requirement": "UiPath at scale", "why": "matches the posting"},
             {"text": "  ", "why": "blank, should be dropped"},
             {"text": "Mention Terraform experience", "why": ""},
         ],
@@ -26,8 +27,9 @@ def test_review_cv_filters_blank_items(monkeypatch):
     assert result["strengths"] == ["Deep RPA background", "Strong Python delivery"]
     assert result["improvements"] == ["No cloud certifications listed"]
     assert result["suggestions"] == [
-        {"text": "Add a line about leading the UiPath rollout", "why": "matches the posting"},
-        {"text": "Mention Terraform experience", "why": None},
+        {"text": "Add a line about leading the UiPath rollout",
+         "requirement": "UiPath at scale", "why": "matches the posting"},
+        {"text": "Mention Terraform experience", "requirement": None, "why": None},
     ]
 
 

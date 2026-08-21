@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import agent, config, documents, profile, pull, service, store
-from .documents import palette
+from .documents import layout, palette
 
 UI_DIST = Path(__file__).resolve().parents[1] / "ui" / "dist"
 
@@ -432,6 +432,9 @@ def create_app(cfg=None):
                 for k, v in palette.ACCENTS.items()
             ],
             "default": palette.DEFAULT_ACCENT,
+            # The preview reads the same type scale the exports use, so the
+            # three renderings cannot drift apart.
+            "layout": layout.css_vars(),
         }
 
     @app.get("/api/documents/{job_id}")

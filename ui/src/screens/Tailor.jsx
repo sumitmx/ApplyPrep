@@ -29,12 +29,15 @@ export default function Tailor() {
   const [action, setAction] = useState(null)
   const [toast, setToast] = useState(null)
   const [accents, setAccents] = useState([])
+  const [cvLayout, setCvLayout] = useState({})
   const [format, setFormat] = usePersisted('cvFormat', 'docx')
   const [accent, setAccent] = usePersisted('cvAccent', 'navy')
   const chosenAccent = accents.find((a) => a.key === accent) || {}
 
   useEffect(() => {
-    api.cvAccents().then((d) => setAccents(d.accents)).catch(() => {})
+    api.cvAccents()
+      .then((d) => { setAccents(d.accents); setCvLayout(d.layout || {}) })
+      .catch(() => {})
   }, [])
 
   const load = () => {
@@ -240,6 +243,7 @@ export default function Tailor() {
                     accentHex={chosenAccent.hex || '#1F3864'}
                     accentInk={chosenAccent.ink}
                     accentText={chosenAccent.text}
+                    layout={cvLayout}
                   />
                 </>
               ) : (
@@ -333,6 +337,11 @@ export default function Tailor() {
                   ) : (
                     review.suggestions.map((s, i) => (
                       <div key={i} style={{ marginBottom: 14 }}>
+                        {s.requirement && (
+                          <p className="reqtag">
+                            the advert asks for <b>{s.requirement}</b>
+                          </p>
+                        )}
                         <textarea
                           className="skillbox"
                           rows={2}
@@ -391,6 +400,7 @@ export default function Tailor() {
           </Panel>
 
           <div className="two">
+            {safety && (
             <Panel
               title="Will recruiting software read it properly"
               note={safety.passed + ' of ' + (safety.passed + safety.failed) + ' checks pass'}
@@ -410,7 +420,9 @@ export default function Tailor() {
                 </p>
               </div>
             </Panel>
+            )}
 
+            {kw && kw.counts && (
             <Panel title="Words this advert asks for" note="the three buckets behind the ATS score above">
               <div className="pbody">
                 <div className="kw">
@@ -443,6 +455,7 @@ export default function Tailor() {
                 </p>
               </div>
             </Panel>
+            )}
           </div>
 
         </>

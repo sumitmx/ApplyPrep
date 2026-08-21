@@ -355,14 +355,19 @@ def test_review_cv_returns_the_ai_review_and_is_reflected_on_reload(client, monk
     monkeypatch.setattr(review.agent, "run_json", lambda *a, **k: {
         "strengths": ["Deep automation background"],
         "improvements": ["No leadership scope mentioned"],
-        "suggestions": [{"text": "Add a line about mentoring", "why": "shows growth"}],
+        "suggestions": [{"text": "Add a line about mentoring",
+                         "requirement": "team leadership", "why": "shows growth"}],
     })
     resp = client.post("/api/documents/1/cv/review")
     assert resp.status_code == 200
     body = resp.json()
     assert body["strengths"] == ["Deep automation background"]
     assert body["improvements"] == ["No leadership scope mentioned"]
-    assert body["suggestions"] == [{"text": "Add a line about mentoring", "why": "shows growth"}]
+    assert body["suggestions"] == [{
+        "text": "Add a line about mentoring",
+        "requirement": "team leadership",
+        "why": "shows growth",
+    }]
 
     reloaded = client.get("/api/documents/1").json()
     assert reloaded["review"] == body

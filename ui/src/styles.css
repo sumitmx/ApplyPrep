@@ -396,24 +396,42 @@ a{color:inherit;text-decoration:none}
 .err{background:var(--rust-bg);border:1px solid var(--line);color:var(--rust);
   padding:11px 14px;border-radius:var(--r);font-size:13px;margin-bottom:14px}
 
-.cv-preview{--cv-accent:#1F3864;--cv-ink:#fff;--cv-accent-text:#1F3864;background:var(--paper);border:1px solid var(--line);
+.cv-preview{--cv-accent:#1F3864;--cv-ink:#fff;--cv-accent-text:#1F3864;
+  /* Fallbacks only. The live values are served from documents/layout.py
+     so the preview and the DOCX/PDF exports share one type scale. */
+  --cv-fs-name:29.33px;--cv-fs-headline:14px;--cv-fs-contact:12px;
+  --cv-fs-heading:15.33px;--cv-fs-body:12.67px;--cv-fs-role:15.33px;
+  --cv-fs-client:12px;--cv-fs-meta:11.33px;--cv-fs-bullet:11.33px;
+  --cv-sp-section-before:18.67px;--cv-sp-section-after:8px;
+  --cv-sp-section-end:10.67px;--cv-sp-role-before:13.33px;
+  --cv-sp-role-after:1.33px;--cv-sp-meta-after:4px;
+  --cv-sp-bullet-after:2.67px;--cv-sp-bullets-after:5.33px;
+  --cv-sp-para-after:4px;
+  background:var(--paper);border:1px solid var(--line);
   border-radius:var(--r);padding:0 22px 20px;max-height:460px;overflow-y:auto;
-  font-size:13px;line-height:1.6;color:var(--ink)}
+  font-size:var(--cv-fs-body);line-height:1.6;color:var(--ink)}
 .cv-preview .cv-header{background:var(--cv-accent);color:var(--cv-ink);
   margin:0 -22px 14px;padding:18px 22px;border-radius:var(--r) var(--r) 0 0}
-.cv-preview .cv-name{font-family:'Space Grotesk',sans-serif;font-size:22px;
+.cv-preview .cv-name{font-family:'Space Grotesk',sans-serif;font-size:var(--cv-fs-name);
   font-weight:600;color:var(--cv-ink)}
-.cv-preview .cv-headline{font-weight:600;font-size:13px;color:var(--cv-ink);margin-top:2px;opacity:0.92}
-.cv-preview .cv-contact{font-size:11.5px;color:var(--cv-ink);margin-top:4px;opacity:0.85}
-.cv-preview .cv-heading{font-weight:600;font-size:13px;color:var(--cv-ink);background:var(--cv-accent);
-  text-transform:uppercase;letter-spacing:0.02em;margin:14px -22px 8px;padding:6px 22px}
-.cv-preview .cv-body{margin-bottom:6px}
+.cv-preview .cv-headline{font-weight:600;font-size:var(--cv-fs-headline);color:var(--cv-ink);margin-top:2px;opacity:0.92}
+.cv-preview .cv-contact{font-size:var(--cv-fs-contact);color:var(--cv-ink);margin-top:4px;opacity:0.85}
+.cv-preview .cv-heading{font-weight:600;font-size:var(--cv-fs-heading);color:var(--cv-ink);
+  background:var(--cv-accent);text-transform:uppercase;letter-spacing:0.02em;
+  margin:var(--cv-sp-section-before) -22px var(--cv-sp-section-after);padding:6px 22px}
+.cv-preview .cv-heading:first-child{margin-top:0}
+.cv-preview .cv-body{margin-bottom:var(--cv-sp-para-after)}
+.cv-preview .cv-roleline{font-size:var(--cv-fs-role);margin-bottom:var(--cv-sp-role-after)}
 .cv-preview .cv-accent-text{color:var(--cv-accent-text);font-weight:600}
-.cv-preview .cv-client{color:var(--cv-accent-text);font-size:12px;margin-bottom:2px}
-.cv-preview .cv-meta{color:var(--ink-3);font-size:11.5px;margin-bottom:4px}
-.cv-preview .cv-bullets{margin:0 0 8px 18px}
-.cv-preview .cv-bullets li{margin-bottom:3px}
-.cv-preview .cv-role{margin-bottom:8px}
+.cv-preview .cv-client{color:var(--cv-accent-text);font-size:var(--cv-fs-client);
+  margin-bottom:var(--cv-sp-role-after)}
+.cv-preview .cv-meta{color:var(--ink-3);font-size:var(--cv-fs-meta);
+  margin-bottom:var(--cv-sp-meta-after)}
+.cv-preview .cv-bullets{margin:0 0 var(--cv-sp-bullets-after) 18px;
+  font-size:var(--cv-fs-bullet)}
+.cv-preview .cv-bullets li{margin-bottom:var(--cv-sp-bullet-after)}
+.cv-preview .cv-role{margin-bottom:0}
+.cv-preview .cv-role + .cv-role{margin-top:var(--cv-sp-role-before)}
 
 .accentpicker{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .swatch{width:22px;height:22px;border-radius:50%;cursor:pointer;
@@ -472,3 +490,8 @@ a{color:inherit;text-decoration:none}
 @media (max-width:620px){
   .modalcard .two{grid-template-columns:1fr}
 }
+
+/* Ties a review suggestion back to the line in the advert it answers, so it is
+   obvious the wording is not generic filler. */
+.reqtag{font-size:11.5px;color:var(--ink-3);margin-bottom:4px}
+.reqtag b{color:var(--ink-2);font-weight:600}

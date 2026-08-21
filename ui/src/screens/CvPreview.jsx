@@ -1,4 +1,4 @@
-export default function CvPreview({ content, accentHex, accentInk, accentText }) {
+export default function CvPreview({ content, accentHex, accentInk, accentText, layout }) {
   const identity = content.identity || {}
   const contact = [identity.location, identity.phone, identity.email, identity.linkedin]
     .filter(Boolean).join(' | ')
@@ -10,6 +10,7 @@ export default function CvPreview({ content, accentHex, accentInk, accentText })
         '--cv-accent': accentHex,
         '--cv-ink': accentInk || '#fff',
         '--cv-accent-text': accentText || accentHex,
+        ...(layout || {}),
       }}
     >
       <div className="cv-header">
@@ -38,7 +39,7 @@ export default function CvPreview({ content, accentHex, accentInk, accentText })
 
           {section.kind === 'experience' && section.roles.map((role, ri) => (
             <div key={ri} className="cv-role">
-              <p className="cv-body">
+              <p className="cv-roleline">
                 <b>{role.title}</b>, <span className="cv-accent-text">{role.company}</span>
               </p>
               {role.client && <p className="cv-client">Client: {role.client}</p>}

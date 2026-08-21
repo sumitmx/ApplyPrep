@@ -4,11 +4,14 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import ListFlowable, ListItem, Paragraph, SimpleDocTemplate
 
-from . import palette
+from . import layout, palette
 
 GRAY = "#595959"
 BLACK = "#000000"
 WHITE = "#FFFFFF"
+
+FONT = layout.FONT_PT
+SPACE = layout.SPACE_PT
 
 
 def _esc(text):
@@ -20,40 +23,63 @@ def _styles(accent_hex):
     on_paper = palette.on_paper(accent_hex)
     return {
         "name": ParagraphStyle(
-            "name", fontName="Helvetica-Bold", fontSize=24,
+            "name", fontName="Helvetica-Bold", fontSize=FONT["name"],
             textColor=HexColor(ink), backColor=HexColor(accent_hex),
-            leading=28, spaceAfter=0, spaceBefore=0, borderPadding=(6, 10, 2, 10),
+            leading=FONT["name"] * 1.17, spaceAfter=0, spaceBefore=0,
+            borderPadding=(6, 10, 2, 10),
         ),
         "headline": ParagraphStyle(
-            "headline", fontName="Helvetica-Bold", fontSize=10.5,
+            "headline", fontName="Helvetica-Bold", fontSize=FONT["headline"],
             textColor=HexColor(ink), backColor=HexColor(accent_hex),
             spaceAfter=0, spaceBefore=0, borderPadding=(0, 10, 2, 10),
         ),
         "contact": ParagraphStyle(
-            "contact", fontName="Helvetica", fontSize=9,
+            "contact", fontName="Helvetica", fontSize=FONT["contact"],
             textColor=HexColor(ink), backColor=HexColor(accent_hex),
-            spaceAfter=8, spaceBefore=0, borderPadding=(0, 10, 6, 10),
+            spaceAfter=0, spaceBefore=0, borderPadding=(0, 10, 6, 10),
         ),
         "heading": ParagraphStyle(
-            "heading", fontName="Helvetica-Bold", fontSize=12,
+            "heading", fontName="Helvetica-Bold", fontSize=FONT["heading"],
             textColor=HexColor(ink), backColor=HexColor(accent_hex),
-            spaceBefore=10, spaceAfter=4, borderPadding=(4, 10, 4, 10),
+            spaceBefore=SPACE["section_before"], spaceAfter=SPACE["section_after"],
+            borderPadding=(4, 10, 4, 10),
+        ),
+        # The first heading butts against the contact band, so it takes no gap.
+        "heading_first": ParagraphStyle(
+            "heading_first", fontName="Helvetica-Bold", fontSize=FONT["heading"],
+            textColor=HexColor(ink), backColor=HexColor(accent_hex),
+            spaceBefore=SPACE["section_after"], spaceAfter=SPACE["section_after"],
+            borderPadding=(4, 10, 4, 10),
         ),
         "body": ParagraphStyle(
-            "body", fontName="Helvetica", fontSize=9.5,
-            textColor=HexColor(BLACK), leading=13, spaceAfter=2,
+            "body", fontName="Helvetica", fontSize=FONT["body"],
+            textColor=HexColor(BLACK), leading=FONT["body"] * 1.37,
+            spaceAfter=SPACE["para_after"],
+        ),
+        # Was quietly rendering at body size, which is why the PDF never looked
+        # like the Word file. It now matches, and sits clearly above the bullets.
+        "role": ParagraphStyle(
+            "role", fontName="Helvetica", fontSize=FONT["role"],
+            textColor=HexColor(BLACK), leading=FONT["role"] * 1.25,
+            spaceBefore=SPACE["role_before"], spaceAfter=SPACE["role_after"],
+        ),
+        "role_first": ParagraphStyle(
+            "role_first", fontName="Helvetica", fontSize=FONT["role"],
+            textColor=HexColor(BLACK), leading=FONT["role"] * 1.25,
+            spaceBefore=0, spaceAfter=SPACE["role_after"],
         ),
         "role_meta": ParagraphStyle(
-            "role_meta", fontName="Helvetica", fontSize=9,
-            textColor=HexColor(GRAY), spaceAfter=2,
+            "role_meta", fontName="Helvetica", fontSize=FONT["meta"],
+            textColor=HexColor(GRAY), spaceAfter=SPACE["meta_after"],
         ),
         "client": ParagraphStyle(
-            "client", fontName="Helvetica", fontSize=9.5,
-            textColor=HexColor(on_paper), spaceAfter=2,
+            "client", fontName="Helvetica", fontSize=FONT["client"],
+            textColor=HexColor(on_paper), spaceAfter=SPACE["role_after"],
         ),
         "bullet": ParagraphStyle(
-            "bullet", fontName="Helvetica", fontSize=9.5,
-            textColor=HexColor(BLACK), leading=13,
+            "bullet", fontName="Helvetica", fontSize=FONT["bullet"],
+            textColor=HexColor(BLACK), leading=FONT["bullet"] * 1.4,
+            spaceAfter=SPACE["bullet_after"],
         ),
     }
 
@@ -63,7 +89,7 @@ def _bullets(items, style):
         [ListItem(Paragraph(text, style), leftIndent=6) for text in items],
         bulletType="bullet",
         leftIndent=16,
-        spaceAfter=4,
+        spaceAfter=SPACE["bullets_after"],
     )
 
 
@@ -98,12 +124,15 @@ def cv_pdf(content, path, accent=palette.DEFAULT_ACCENT):
 
     summary = content.get("summary")
     if summary:
-        flow.append(Paragraph("PROFESSIONAL SUMMARY", styles["heading"]))
+        flow.append(Paragraph("PROFESSIONAL SUMMARY", styles["heading_first"]))
         flow.append(Paragraph(_esc(summary), styles["body"]))
 
-    for section in content.get("sections") or []:
+    for index, section in enumerate(content.get("sections") or []):
         kind = section["kind"]
-        flow.append(Paragraph(section["heading"], styles["heading"]))
+        first = not summary and index == 0
+        flow.append(Paragraph(
+            section["heading"], styles["heading_first" if first else "heading"]
+        ))
 
         if kind == "skills":
             for tier in section["tiers"]:
@@ -114,12 +143,14 @@ def cv_pdf(content, path, accent=palette.DEFAULT_ACCENT):
                 flow.append(Paragraph(text, styles["body"]))
 
         elif kind == "experience":
-            for role in section["roles"]:
+            for role_index, role in enumerate(section["roles"]):
                 header = (
                     "<b>" + _esc(role["title"]) + "</b>, <font color=\"" + _on_paper + "\">"
                     + _esc(role["company"]) + "</font>"
                 )
-                flow.append(Paragraph(header, styles["body"]))
+                flow.append(Paragraph(
+                    header, styles["role_first" if role_index == 0 else "role"]
+                ))
                 if role.get("client"):
                     flow.append(Paragraph("Client: " + _esc(role["client"]), styles["client"]))
                 location = role.get("location") or ""
