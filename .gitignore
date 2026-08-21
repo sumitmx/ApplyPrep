@@ -1,12 +1,30 @@
+# --- personal data: never commit these -------------------------------------
+# Your real CV and job-search preferences. Copy the .example.yaml versions
+# and fill them in; the originals stay on your machine only.
+master.yaml
+profile.yaml
+
+# Generated CVs and cover letters contain your personal details.
+/documents/
+
+# --- local state ------------------------------------------------------------
+jobs.db
+jobs.db*
+*.bak
+config.local.yaml
+session.log
+server.log
+*.log
+
+# --- credentials ------------------------------------------------------------
+gmail_client_secret*.json
+.env
+.env.*
+
+# --- build & tooling --------------------------------------------------------
 .venv/
 __pycache__/
 .pytest_cache/
 *.pyc
-jobs.db
-jobs.db*
-/documents/
-config.local.yaml
-session.log
-gmail_client_secret*.json
 node_modules/
 dist/

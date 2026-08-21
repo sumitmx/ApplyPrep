@@ -21,6 +21,7 @@ export default function Letter() {
         body: d.letter.body,
         word_count: d.letter.word_count,
         note: (d.letter.payload || {}).note,
+        sign_off: (d.letter.payload || {}).sign_off || d.letter.master_version,
       } : null)
       return d
     }).catch(setError)
@@ -129,7 +130,9 @@ export default function Letter() {
               {result.body.split(/\n\s*\n/).map((para, i) => (
                 <p key={i} style={{ marginBottom: 11 }}>{para}</p>
               ))}
-              <p style={{ marginBottom: 11 }}>Warm regards,<br />Alex Morgan</p>
+              <p style={{ marginBottom: 11 }}>
+                Warm regards,{result.sign_off ? <><br />{result.sign_off}</> : null}
+              </p>
               <div className="btns">
                 <button className="btn pri" onClick={save} disabled={action === 'save'}>
                   {action === 'save' ? 'Saving...' : saved ? 'Save again' : 'Save as Word file'}

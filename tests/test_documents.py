@@ -10,7 +10,7 @@ from jobagent import profile
 from jobagent.documents import coverage, guard, lint, tailor
 
 MASTER = yaml.safe_load(
-    (Path(__file__).resolve().parents[1] / "master.yaml").read_text(encoding="utf-8")
+    (Path(__file__).resolve().parents[1] / "master.example.yaml").read_text(encoding="utf-8")
 )
 
 
@@ -43,7 +43,7 @@ def test_guard_accepts_real_bullet_ids():
         {"id": "exp.meridian.b1", "action": "rewrote", "text": "Reworded version"},
     ], MASTER)
     assert len(clean) == 2
-    assert clean[1]["was"].startswith("Designed and deployed")
+    assert clean[1]["was"].startswith("Designed and shipped")
     assert clean[1]["text"] == "Reworded version"
 
 
@@ -69,7 +69,7 @@ def test_guard_rejects_an_unknown_action():
 
 def test_guard_keeps_original_text_when_none_supplied():
     clean = guard.check([{"id": "exp.orion.b1", "action": "kept"}], MASTER)
-    assert "Built the first automation capability" in clean[0]["text"]
+    assert "Built the bank's first automation capability" in clean[0]["text"]
 
 
 def test_dropped_bullets_are_not_in_the_cv_text():
@@ -79,7 +79,7 @@ def test_dropped_bullets_are_not_in_the_cv_text():
     ], MASTER)
     text = guard.selected_text(clean)
     assert "AI alerting system" in text
-    assert "Orion Bank" not in text and "proof of concept" not in text
+    assert "Orion" not in text and "proof of concept" not in text
 
 
 def test_coverage_splits_into_three_buckets():
@@ -172,10 +172,9 @@ def test_build_cv_content_has_expected_section_order_and_identity():
     experience = next(s for s in content["sections"] if s["kind"] == "experience")
     role = experience["roles"][0]
     assert role["bullets"] == ["Own the architecture of an AI alerting system on "
-                               "Google Cloud for a Google engineering team, tracking "
-                               "SLA adherence in their ticket-management system and "
-                               "sending case owners real-time alerts with AI "
-                               "recommendations"]
+                               "Google Cloud that tracks SLA adherence in a "
+                               "ticket-management system and sends case owners "
+                               "real-time alerts with AI recommendations"]
 
 
 def test_palette_entries_have_a_label_and_a_valid_hex():

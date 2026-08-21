@@ -1,0 +1,312 @@
+# ---------------------------------------------------------------------------
+# master.example.yaml - the template for your own master.yaml
+#
+# Copy this file to master.yaml and replace the content with your real career
+# history. master.yaml is gitignored, so your personal details never leave
+# your machine.
+#
+#     cp master.example.yaml master.yaml
+#
+# This is the single source of truth the CV tailor draws from. Every bullet
+# needs a stable, unique id. The tailor is only ever allowed to keep, reword,
+# drop or pull bullets that already exist here - it cannot invent new ones.
+# That guarantee is enforced in code (jobagent/documents/guard.py), and it is
+# what stops an AI-tailored CV from putting words in your mouth.
+#
+# The fictional person below is also the fixture the test suite runs against,
+# so if you break the schema here, the tests will tell you.
+# ---------------------------------------------------------------------------
+
+identity:
+  name: Alex Morgan
+  headline: Principal Architect  |  AI & Intelligent Automation  |  RPA  |  Cloud (GCP, AWS, Azure)
+  location: Lisbon, Portugal
+  email: alex.morgan@example.com
+  phone: +351 900 000 000
+  linkedin: linkedin.com/in/example-profile
+
+summary: Principal Architect with 20+ years in enterprise IT, most of it spent building automation that ships and holds up in production. Currently leads the design of an AI alerting platform on Google Cloud. Previously delivered RPA, MLOps and cloud CI/CD work across banking, manufacturing and IT services. Stays hands-on with the build while leading the people doing it. Open to relocating within Europe and ready for sponsorship.
+
+experience:
+  - id: exp.northstar
+    company: Northstar Digital
+    client: a global technology client
+    title: Principal Architect / AI Programme Manager
+    location: Lisbon, Portugal
+    start: 2025-10
+    end: present
+    bullets:
+      - id: exp.northstar.b1
+        text: Own the architecture of an AI alerting system on Google Cloud that tracks SLA adherence in a ticket-management system and sends case owners real-time alerts with AI recommendations
+        skills:
+          - gcp
+          - vertex ai
+          - ai architecture
+          - alerting
+          - sla
+      - id: exp.northstar.b2
+        text: Each alert carries an AI read of the situation and a recommended next step, so owners triage faster and with better context
+        skills:
+          - ai architecture
+          - llm
+      - id: exp.northstar.b3
+        text: Run the delivery programme end to end across a team of nine, from architecture sign-off through to production rollout and handover
+        skills:
+          - programme management
+          - delivery leadership
+      - id: exp.northstar.b4
+        text: Built the reporting layer in BigQuery and Looker so programme health is visible to stakeholders without anyone assembling a slide deck
+        skills:
+          - bigquery
+          - looker
+          - reporting
+
+  - id: exp.meridian
+    company: Meridian Manufacturing
+    title: Intelligent Automation System Engineer
+    location: Porto, Portugal
+    start: 2024-05
+    end: 2025-03
+    bullets:
+      - id: exp.meridian.b1
+        text: Designed and shipped attended and unattended automations integrating SAP, Salesforce and internal systems, cutting manual handling on the highest-volume processes
+        skills:
+          - uipath
+          - rpa
+          - sap
+          - salesforce
+      - id: exp.meridian.b2
+        text: Introduced a reusable component library and PowerShell-based workflow integrations, which cut build time on new automations by roughly a third
+        skills:
+          - uipath
+          - powershell
+          - reusability
+      - id: exp.meridian.b3
+        text: Set up CI/CD for bot releases on Jenkins so deployments stopped being a manual, error-prone evening job
+        skills:
+          - jenkins
+          - ci/cd
+          - devops
+
+  - id: exp.vantage
+    company: Vantage Consulting
+    title: Senior Manager / Lead Developer
+    location: Lisbon, Portugal
+    start: 2022-02
+    end: 2024-04
+    bullets:
+      - id: exp.vantage.b1
+        text: Led cloud automation delivery for enterprise clients across AWS and Azure, building infrastructure pipelines with Terraform and Ansible
+        skills:
+          - terraform
+          - ansible
+          - aws
+          - azure
+          - devops
+      - id: exp.vantage.b2
+        text: Built and ran CI/CD on Jenkins and GitLab for a portfolio of client engagements, standardising how teams shipped
+        skills:
+          - jenkins
+          - gitlab
+          - ci/cd
+      - id: exp.vantage.b3
+        text: Managed a delivery team of six, owning estimation, technical direction and client-facing architecture reviews
+        skills:
+          - delivery leadership
+          - architecture
+      - id: exp.vantage.b4
+        text: Deployed supervised-learning models into production with an MLOps pipeline covering retraining, versioning and governance
+        skills:
+          - mlops
+          - python
+          - machine learning
+
+  - id: exp.harbor
+    company: Harbor Technologies
+    title: Technical Lead
+    location: Lisbon, Portugal
+    start: 2021-03
+    end: 2022-02
+    bullets:
+      - id: exp.harbor.b1
+        text: Led an RPA practice team delivering document-processing automations with OCR and document understanding across finance and operations
+        skills:
+          - uipath
+          - ocr
+          - document understanding
+      - id: exp.harbor.b2
+        text: Built a FastAPI service layer that let automations talk to legacy systems without brittle screen scraping
+        skills:
+          - fastapi
+          - python
+          - api integration
+
+  - id: exp.orion
+    company: Orion Bank
+    title: Lead Analyst
+    location: Lisbon, Portugal
+    start: 2014-11
+    end: 2021-03
+    bullets:
+      - id: exp.orion.b1
+        text: Built the bank's first automation capability from scratch, growing it from a single proof of concept to a portfolio of production processes in regulated workflows
+        skills:
+          - uipath
+          - rpa
+          - banking
+          - compliance
+      - id: exp.orion.b2
+        text: Partnered with risk and compliance to get automation accepted in a regulated environment, including audit trails and segregation-of-duty controls
+        skills:
+          - compliance
+          - banking
+          - governance
+      - id: exp.orion.b3
+        text: Mentored analysts into automation developers, growing the internal team rather than buying capacity in
+        skills:
+          - mentoring
+          - delivery leadership
+
+  - id: exp.earlier
+    company: Earlier career across banking and enterprise IT services
+    title: Earlier career
+    location: Lisbon, Portugal
+    start: 2006-01
+    end: 2014-10
+    bullets:
+      - id: exp.earlier.b1
+        text: Progressive roles in cloud, SAN storage and backup infrastructure across banking and enterprise clients, as Infrastructure Specialist, Storage Specialist, System Analyst and System Engineer
+        skills:
+          - infrastructure
+          - storage
+          - backup
+          - banking
+
+projects:
+  - id: proj.rag
+    name: AI Knowledge Assistant
+    text: RAG chatbot with contextual memory and semantic search over a vector database, with a Streamlit UI for natural-language querying of large datasets
+    skills:
+      - rag
+      - llm
+      - vector database
+      - semantic search
+      - python
+      - streamlit
+  - id: proj.contracts
+    name: Contract Management
+    text: Automated extraction and classification of 8000 or more contract PDFs, reducing manual effort by 70 percent and improving compliance tracking
+    skills:
+      - uipath
+      - document understanding
+      - ocr
+      - compliance
+  - id: proj.predictive
+    name: Predictive Network Automation
+    text: Supervised-learning models forecasting 80 percent of recurring faults at 85 percent accuracy, reducing downtime by 25 percent
+    skills:
+      - supervised learning
+      - python
+      - aws sagemaker
+      - mlops
+  - id: proj.servicenow
+    name: ServiceNow Automation
+    text: Streamlined ticket lifecycle via ServiceNow API integration, cutting resolution time by 40 percent
+    skills:
+      - servicenow
+      - python
+      - api integration
+
+# Three tiers. "core" is what you would defend in a deep-dive interview,
+# "working" is what you have shipped with, "familiar" is honest exposure.
+# The coverage checker uses these to tell a real gap from a fixable one.
+skills:
+  core:
+    - name: UiPath
+      context: 10 yr, Orion Bank through Meridian
+    - name: RPA
+      context: 10 yr
+    - name: Intelligent automation architecture
+      context: 10 yr
+    - name: Python
+      context: used across RPA, ML and service work
+    - name: Automation delivery leadership
+      context: teams of 6 to 9
+  working:
+    - name: Google Cloud Platform
+      context: current platform, Vertex AI and BigQuery
+    - name: Vertex AI
+      context: agent platform work on the current programme
+    - name: BigQuery
+      context: data and reporting layer on the current programme
+    - name: Terraform
+      context: automation pipelines at Vantage
+    - name: Ansible
+      context: automation pipelines at Vantage
+    - name: Jenkins
+      context: CI/CD at Meridian and Vantage
+    - name: GitLab
+      context: CI/CD at Vantage
+    - name: AWS
+      context: DevOps delivery at Vantage
+    - name: Azure
+      context: DevOps delivery at Vantage
+    - name: ServiceNow
+      context: API integration and ticket automation
+    - name: FastAPI
+      context: service layer work
+    - name: SAP
+      context: bot integration at Meridian
+    - name: Salesforce
+      context: bot integration at Meridian
+    - name: OCR
+      context: document understanding, 8000 plus contracts
+    - name: RAG
+      context: knowledge assistant over a vector database
+    - name: MLOps
+      context: model deployment and governance
+    - name: Looker
+      context: reporting on the current programme
+    - name: PowerShell
+      context: workflow integration at Meridian
+    - name: Full-stack development
+      context: side projects using React, FastAPI and Django
+  familiar:
+    - name: React
+      context: listed on CV, front end work not the main role
+    - name: Django
+      context: listed on CV, not the main framework used
+    - name: AWS SageMaker
+      context: used on one predictive maintenance project
+    - name: Streamlit
+      context: used for one internal assistant UI
+    - name: Power BI
+      context: reporting exposure alongside Looker
+    - name: AWS Glue
+      context: ETL exposure
+    - name: MSSQL
+      context: data work on earlier automation projects
+
+certifications:
+  - UiPath Advanced Associate
+  - AWS Certified Cloud Practitioner
+  - SAFe 6
+  - ITIL
+  - Python Developer, Udemy
+
+education:
+  - degree: B.E. / B.Tech, Information Technology
+    school: Example Institute of Engineering and Technology
+    years: 2002-2006
+
+languages:
+  - name: English
+    level: Fluent
+  - name: Portuguese
+    level: Native
+  - name: Spanish
+    level: Conversational
+
+# Skills the agent has spotted in job adverts that you have not yet claimed.
+# Reviewed and promoted into the tiers above from the Profile screen.
+pending_keywords: []

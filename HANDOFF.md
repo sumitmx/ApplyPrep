@@ -10,9 +10,14 @@ the bottom; start at the first unchecked item.
 
 ## What this is
 
-A personal job discovery pipeline for one user, Alex, a Principal Architect
-based in Lisbon looking for automation and AI architect roles in Europe,
-primarily Germany and the Netherlands, requiring visa sponsorship.
+A single-user job discovery pipeline. It is built for one person running it on
+their own machine against their own CV - the reference setup is a senior
+engineer or architect searching for roles abroad and needing visa sponsorship,
+so sponsorship signals are first-class throughout.
+
+The user's own details live in `master.yaml` and `profile.yaml`, which are
+gitignored. Copy `master.example.yaml` and `profile.example.yaml` to get
+started.
 
 It pulls postings from documented APIs and public ATS board endpoints into one
 SQLite file. It is read only against every source. It never submits an

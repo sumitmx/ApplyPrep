@@ -14,7 +14,7 @@ from jobagent import api, chat as chat_module, config, store
 def client(tmp_path):
     cfg = config.load("does-not-exist.yaml")
     cfg["db_path"] = str(tmp_path / "test.db")
-    cfg["master_path"] = str(tmp_path / "master.yaml")
+    cfg["master_path"] = str(tmp_path / "master.example.yaml")
     conn = store.connect(cfg["db_path"])
     store.init(conn)
     seed(conn)
@@ -256,7 +256,7 @@ def test_sources(client):
 def test_master_cv_empty_state(client):
     body = client.get("/api/master-cv").json()
     assert body["available"] is False
-    assert "master.yaml" in body["hint"]
+    assert "master.example.yaml" in body["hint"]
 
 
 def test_documents_empty(client):
@@ -295,7 +295,7 @@ def test_master_upload_rejects_letter_kind(client):
 def test_master_cv_preview_is_not_truncated(tmp_path):
     cfg = config.load("does-not-exist.yaml")
     cfg["db_path"] = str(tmp_path / "test.db")
-    cfg["master_path"] = str(tmp_path / "master.yaml")
+    cfg["master_path"] = str(tmp_path / "master.example.yaml")
     cfg["documents_dir"] = str(tmp_path / "documents")
     conn = store.connect(cfg["db_path"])
     store.init(conn)

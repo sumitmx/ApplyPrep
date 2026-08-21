@@ -912,10 +912,17 @@ def generate_letter(conn, job_id, master, user_profile, timeout=None):
     result = documents_module.cover_letter(
         job, master, user_profile, provider=get_ai_provider(conn), **kwargs
     )
+    letter_prefs = (user_profile or {}).get("cover_letter") or {}
+    sign_off = (
+        letter_prefs.get("sign_off")
+        or (user_profile or {}).get("name")
+        or (master.get("identity") or {}).get("name")
+    )
+    result["sign_off"] = sign_off
     store.save_document(
         conn, job_id, "letter",
         body=result["body"],
-        payload={"note": result.get("note")},
+        payload={"note": result.get("note"), "sign_off": sign_off},
         word_count=result["word_count"],
         master_version=(master.get("identity") or {}).get("name"),
     )
@@ -1022,7 +1029,8 @@ def master_cv(master=None):
             "available": False,
             "tiers": {tier: [] for tier in profile.TIERS},
             "pending": [],
-            "hint": "master.yaml not found. Create it to enable CV tailoring.",
+            "hint": "master.yaml not found. Copy master.example.yaml to"
+                    " master.yaml and fill it in to enable CV tailoring.",
         }
     return {
         "available": True,

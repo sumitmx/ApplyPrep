@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# profile.example.yaml - the template for your own profile.yaml
+#
+# Copy this file to profile.yaml and fill in your own details. profile.yaml is
+# gitignored, so your personal preferences never leave your machine.
+#
+#     cp profile.example.yaml profile.yaml
+#
+# This drives what the agent hunts for: which titles count as a match, which
+# countries are in scope, and how the cover letter signs off.
+# ---------------------------------------------------------------------------
+
+name: Alex Morgan
+base: Lisbon, Portugal
+seniority: principal
+
+# A job title has to look like one of these to get through the gate.
+target_titles:
+  - architect
+  - principal engineer
+  - staff engineer
+  - platform lead
+  - engineering manager
+  - head of automation
+  - ai engineer
+
+# ISO country codes the search is limited to.
+target_countries: [DE, NL, IE, AT, CH, GB]
+
+# Drives visa-sponsorship scoring and how the cover letter frames the ask.
+needs_sponsorship: true
+visa_routes:
+  - Blue Card
+  - Highly Skilled Migrant
+
+languages_spoken: [en]
+german_level: none
+
+open_to:
+  remote: true
+  hybrid: true
+  onsite: true
+  contract: true
+  relocation: true
+
+cover_letter:
+  max_words: 250
+  sign_off: Alex Morgan
+  state_sponsorship_plainly: true
+  address_one_gap_honestly: true

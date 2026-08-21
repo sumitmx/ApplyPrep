@@ -10,6 +10,19 @@ API key.
     python -m venv .venv
     .venv\Scripts\activate
     pip install -r requirements.txt
+
+Then create your own profile from the templates:
+
+    cp master.example.yaml master.yaml
+    cp profile.example.yaml profile.yaml
+
+`master.yaml` is your full career history - every bullet you have ever earned,
+each with a stable id. `profile.yaml` is what you are looking for: target
+titles, countries, and sponsorship needs. Both are gitignored, so your personal
+details stay on your machine and never reach the repository.
+
+Fill them in, then initialise the database:
+
     python cli.py init
 
 ## Use

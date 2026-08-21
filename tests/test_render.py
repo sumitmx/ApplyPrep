@@ -11,7 +11,7 @@ from jobagent import service, store
 from jobagent.documents import guard, render, tailor
 
 ROOT = Path(__file__).resolve().parents[1]
-MASTER = yaml.safe_load((ROOT / "master.yaml").read_text(encoding="utf-8"))
+MASTER = yaml.safe_load((ROOT / "master.example.yaml").read_text(encoding="utf-8"))
 
 
 @pytest.fixture
