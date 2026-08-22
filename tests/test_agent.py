@@ -87,3 +87,19 @@ def test_model_reports_the_pinned_sonnet_for_plain_claude(monkeypatch):
     consulted for it - the pin always wins."""
     monkeypatch.setattr(agent, "_configured_model_claude", lambda: "some-other-model")
     assert agent.model("claude") == "claude-sonnet-5"
+
+
+def test_run_json_tolerates_a_raw_newline_inside_a_string(monkeypatch):
+    """Models sometimes emit a literal newline inside a JSON string value
+    instead of an escaped \\n. Strict json.loads rejects that as an invalid
+    control character; run_json must still parse it."""
+    def fake_run(argv, **kwargs):
+        proc = _FakeProc(argv)
+        proc.stdout = '{"body": "line one\nline two"}'
+        return proc
+
+    monkeypatch.setattr(agent.subprocess, "run", fake_run)
+    monkeypatch.setattr(agent, "executable", lambda provider=agent.DEFAULT_PROVIDER: "claude")
+
+    result = agent.run_json("hello", provider="claude")
+    assert result == {"body": "line one\nline two"}

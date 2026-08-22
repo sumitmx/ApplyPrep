@@ -23,6 +23,9 @@ export default function JobDetail() {
   const [estimateError, setEstimateError] = useState(null)
   const [tracking, setTracking] = useState(false)
   const [showChat, setShowChat] = useState(false)
+  const [openedPosting, setOpenedPosting] = useState(
+    () => localStorage.getItem('opened_posting_' + id) === '1'
+  )
 
   const load = () => {
     setJob(null)
@@ -33,6 +36,9 @@ export default function JobDetail() {
     api.documents(id).then(setDocs).catch(() => setDocs(null))
   }
   useEffect(() => { load() }, [id])
+  useEffect(() => {
+    setOpenedPosting(localStorage.getItem('opened_posting_' + id) === '1')
+  }, [id])
 
   const toggleSkills = async () => {
     if (!showSkills && !allSkills) {
@@ -108,15 +114,28 @@ export default function JobDetail() {
         .map(([tier, label]) => [tier, label, job.skill_match[tier] || []])
         .filter(([, , items]) => items.length > 0)
     : []
+  const metaParts = [
+    [job.city, job.country].filter(Boolean).join(', '),
+    'job ' + job.id,
+    job.posted_age,
+  ].filter(Boolean)
 
   return (
     <div>
       <div className="shead">
         <div>
-          <h2>{job.title}</h2>
+          <h2>
+            {job.title}
+            {job.applied && (
+              <span className="pill p-rust" style={{ marginLeft: 10 }}>Applied</span>
+            )}
+          </h2>
           <p>
-            {[job.company, [job.city, job.country].filter(Boolean).join(', '),
-              'job ' + job.id, job.posted_age].filter(Boolean).join(' · ')}
+            {job.company && (
+              <b style={{ fontSize: '1.15em' }}>{job.company}</b>
+            )}
+            {job.company && metaParts.length > 0 ? ' · ' : ''}
+            {metaParts.join(' · ')}
           </p>
           <div className="tags" style={{ marginTop: 8 }}>
             {job.badges.map((b, i) => (
@@ -131,7 +150,16 @@ export default function JobDetail() {
             onClick={() => navigate('/jobs/' + nb.next)}>Next</button>
           <button className="btn pri" onClick={() => setShowChat(true)}>Ask AI</button>
           {job.url && (
-            <a className="btn" href={job.url} target="_blank" rel="noreferrer">
+            <a
+              className="btn"
+              href={job.url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => {
+                localStorage.setItem('opened_posting_' + id, '1')
+                setOpenedPosting(true)
+              }}
+            >
               Open posting
             </a>
           )}
@@ -142,7 +170,17 @@ export default function JobDetail() {
         <button className="btn" onClick={rate} disabled={rating}>
           {rating ? 'Rating...' : (job.scored ? 'Rate again' : 'Rate now')}
         </button>
-        <Link className="btn pri" to={'/jobs/' + job.id + '/tailor'}>Tailor my CV</Link>
+        {job.url && !openedPosting ? (
+          <button
+            className="btn pri"
+            disabled
+            title="Open the posting at least once before tailoring your CV"
+          >
+            Tailor my CV
+          </button>
+        ) : (
+          <Link className="btn pri" to={'/jobs/' + job.id + '/tailor'}>Tailor my CV</Link>
+        )}
         <Link className="btn" to={'/jobs/' + job.id + '/letter'}>Write cover letter</Link>
         <button
           className={'btn' + (job.status === 'shortlisted' ? ' pri' : '')}

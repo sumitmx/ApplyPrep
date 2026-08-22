@@ -7,7 +7,6 @@ import { Empty, ErrorBox, Loading, Panel, PasteJobModal, Pill, Score, Toast }
 const GATES = [
   ['passed', 'worth a look'],
   ['saved', 'saved jobs'],
-  ['applied', 'applied'],
   ['rejected', 'hidden as not relevant'],
   ['unrated', 'not rated yet'],
   ['', 'everything'],
@@ -118,6 +117,7 @@ export default function Jobs() {
   const agency = params.get('agency') ?? ''
   const source = params.get('source') ?? ''
   const band = params.get('band') ?? ''
+  const draftCv = params.get('draft_cv') ?? ''
   const page = Math.max(1, parseInt(params.get('page'), 10) || 1)
 
   const onlySaved = gate === 'saved'
@@ -142,6 +142,7 @@ export default function Jobs() {
         agency,
         source,
         band: onlyUnrated ? 'unrated' : band,
+        draft_cv: draftCv,
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
       })
@@ -149,8 +150,8 @@ export default function Jobs() {
       .catch(setError)
   }
 
-  useEffect(() => { load() }, [gate, hours, country, minFit, remote, agency, source, band, page])
-  useEffect(() => { setSelected(new Set()) }, [gate, hours, country, minFit, remote, agency, source, band, page])
+  useEffect(() => { load() }, [gate, hours, country, minFit, remote, agency, source, band, draftCv, page])
+  useEffect(() => { setSelected(new Set()) }, [gate, hours, country, minFit, remote, agency, source, band, draftCv, page])
 
   const set = (key, value) => {
     const next = new URLSearchParams(params)
@@ -163,6 +164,13 @@ export default function Jobs() {
   const clearBand = () => {
     const next = new URLSearchParams(params)
     next.delete('band')
+    next.delete('page')
+    setParams(next)
+  }
+
+  const clearDraftCv = () => {
+    const next = new URLSearchParams(params)
+    next.delete('draft_cv')
     next.delete('page')
     setParams(next)
   }
@@ -338,6 +346,15 @@ export default function Jobs() {
         </div>
       )}
 
+      {draftCv && (
+        <div className="filters">
+          <Pill tone="amber">Only: CV drafted, not saved</Pill>
+          <button className="btn sm" onClick={clearDraftCv}>
+            Show all jobs
+          </button>
+        </div>
+      )}
+
       <div className="filters">
         <button className="btn sm" onClick={selectAllUnrated} disabled={!data || !!rating}>
           Select all unrated
@@ -438,11 +455,6 @@ export default function Jobs() {
                           {job.websites && job.websites[0] && (
                             <span className="pill p-slate" style={{ marginLeft: 8 }}>
                               {job.websites[0]}
-                            </span>
-                          )}
-                          {job.applied && (
-                            <span className="pill p-rust" style={{ marginLeft: 6 }}>
-                              Applied
                             </span>
                           )}
                         </div>

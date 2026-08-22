@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
-import { Empty, ErrorBox, Loading, Panel, Pill, Score, Toast } from '../components'
+import { Card, Empty, ErrorBox, Loading, Panel, Pill, ScoreRing, Toast } from '../components'
 import CvPreview from './CvPreview'
 
 const TONE = { kept: 'pine', rewrote: 'amber', dropped: 'rust', pulled: 'slate' }
@@ -153,6 +153,8 @@ export default function Tailor() {
   const kw = result && result.keywords
   const saved = state.cv && state.cv.accepted
   const hasFile = state.cv && state.cv.has_file
+  const atsScoreLabel = result && result.ats_score !== null && result.ats_score !== undefined
+    ? result.ats_score + '%' : '-'
 
   return (
     <div>
@@ -183,10 +185,17 @@ export default function Tailor() {
 
       {!result ? (
         <Panel>
-          <Empty title="Nothing written yet">
-            Press Write my CV. Your bullets get reworded to match this advert's
-            language, and anything irrelevant is left out. It takes about a minute.
-          </Empty>
+          {busy ? (
+            <Empty title="Writing, up to a minute...">
+              Your bullets are being reworded to match this advert's language,
+              and anything irrelevant is being left out.
+            </Empty>
+          ) : (
+            <Empty title="Nothing written yet">
+              Press Write my CV. Your bullets get reworded to match this advert's
+              language, and anything irrelevant is left out. It takes about a minute.
+            </Empty>
+          )}
         </Panel>
       ) : (
         <>
@@ -195,24 +204,24 @@ export default function Tailor() {
             note={saved ? 'saved as a Word file' : 'not saved yet'}
           >
             <div className="pbody">
-              <div className="scores" style={{ justifyContent: 'flex-start', marginBottom: 8 }}>
-                <Score value={result.ats_score} label="ATS keyword match" />
+              <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 14 }}>
+                <ScoreRing value={result.ats_score} label="ATS keyword match" />
+                {kw && (
+                  <p style={{ fontSize: 12, lineHeight: 1.6 }}>
+                    <span style={{ color: 'var(--pine)' }}>
+                      Good at: {kw.covered.map((c) => c.term).join(', ') || 'nothing matched yet'}
+                    </span>
+                    {kw.real_gap.length > 0 && (
+                      <>
+                        <br />
+                        <span style={{ color: 'var(--rust)' }}>
+                          Lacking: {kw.real_gap.map((c) => c.term).join(', ')}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
-              {kw && (
-                <p style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 14 }}>
-                  <span style={{ color: 'var(--pine)' }}>
-                    Good at: {kw.covered.map((c) => c.term).join(', ') || 'nothing matched yet'}
-                  </span>
-                  {kw.real_gap.length > 0 && (
-                    <>
-                      <br />
-                      <span style={{ color: 'var(--rust)' }}>
-                        Lacking: {kw.real_gap.map((c) => c.term).join(', ')}
-                      </span>
-                    </>
-                  )}
-                </p>
-              )}
               {result.structured ? (
                 <>
                   <div className="btns" style={{ marginBottom: 12, justifyContent: 'space-between' }}>
@@ -312,15 +321,14 @@ export default function Tailor() {
 
           {review && (
             <>
-              <Panel title="Strengths">
+              <Panel title="Review at a glance">
                 <div className="pbody">
-                  {review.strengths.length === 0 ? (
-                    <Empty title="Nothing flagged">No particular strengths called out.</Empty>
-                  ) : (
-                    review.strengths.map((s, i) => (
-                      <div className="check" key={i}><span>{s}</span></div>
-                    ))
-                  )}
+                  <div className="cards">
+                    <Card label="ATS keyword match" value={atsScoreLabel} tone="pine" />
+                    <Card label="Strengths noted" value={review.strengths.length} tone="pine" />
+                    <Card label="Gaps flagged" value={review.improvements.length} tone="rust" />
+                    <Card label="Suggestions to add" value={review.suggestions.length} tone="amber" />
+                  </div>
                 </div>
               </Panel>
 

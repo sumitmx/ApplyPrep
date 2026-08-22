@@ -131,13 +131,14 @@ def create_app(cfg=None):
                  hours: int | None = None, remote: str | None = None,
                  agency: bool | None = None, source: str | None = None,
                  band: str | None = None, applied: bool | None = None,
+                 draft_cv: bool | None = None,
                  limit: int = 50, offset: int = 0):
         conn = db()
         try:
             return service.jobs(conn, gate=gate, country=country, min_fit=min_fit,
                                 status=status, hours=hours, remote=remote,
                                 agency=agency, source=source, band=band,
-                                applied=applied,
+                                applied=applied, draft_cv=draft_cv,
                                 limit=min(limit, 200), offset=offset,
                                 limits=service.band_limits(cfg))
         finally:

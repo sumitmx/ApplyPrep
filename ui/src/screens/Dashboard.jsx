@@ -17,6 +17,7 @@ const CARD_LINKS = {
   'Not rated yet': '/jobs?gate=unrated',
   'You saved': '/jobs?gate=saved',
   'Applied this month': '/applications',
+  'CV drafted, not saved': '/jobs?draft_cv=1&gate=&hours=',
 }
 
 const FUNNEL_TONE = {

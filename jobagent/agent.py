@@ -198,6 +198,9 @@ def run_json(prompt, timeout=DEFAULT_TIMEOUT, provider=DEFAULT_PROVIDER):
     if start == -1 or end == -1:
         raise AgentError(label + " did not return JSON. It said: " + raw[:300])
     try:
-        return json.loads(raw[start:end + 1])
+        # strict=False tolerates raw control characters (e.g. literal newlines)
+        # inside string values, which models sometimes emit despite being
+        # asked for JSON.
+        return json.loads(raw[start:end + 1], strict=False)
     except ValueError as exc:
         raise AgentError("Could not read " + label + "'s JSON: " + str(exc))

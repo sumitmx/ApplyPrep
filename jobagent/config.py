@@ -65,7 +65,7 @@ DEFAULTS = {
     "gmail": {
         "enabled": False,
         "client_secret_path": "gmail_client_secret.json",
-        "lookback_days": 90,
+        "lookback_days": 30,
     },
 }
 

@@ -104,13 +104,13 @@ def badges(row):
     if row.get("language_required") == "de":
         out.append({"text": "German needed", "tone": "amber", "strong": True})
     else:
-        out.append({"text": "English is enough", "tone": "slate"})
+        out.append({"text": "English is enough", "tone": "pine"})
     if row.get("via_agency"):
         out.append({"text": "posted by an agency", "tone": "rust"})
     else:
-        out.append({"text": "posted by the company", "tone": "slate"})
+        out.append({"text": "posted by the company", "tone": "pine"})
     if row.get("remote") == "remote":
-        out.append({"text": "remote", "tone": "slate"})
+        out.append({"text": "remote", "tone": "pine"})
     hours = age_hours(row.get("posted_at"))
     if hours is not None and hours > 24 * 30:
         out.append({"text": str(int(hours // 24)) + " days old", "tone": "rust"})
@@ -301,7 +301,7 @@ BAND_RANK_SQL = (
 
 def jobs(conn, gate=None, country=None, min_fit=None, status=None,
          hours=None, remote=None, agency=None, source=None, band=None,
-         applied=None, limit=50, offset=0, limits=None):
+         applied=None, draft_cv=None, limit=50, offset=0, limits=None):
     limits = limits or DEFAULT_BANDS
     band_args = [
         limits["strong_match"], limits["strong_chance"],
@@ -348,6 +348,11 @@ def jobs(conn, gate=None, country=None, min_fit=None, status=None,
         where.append("application.applied_at IS NOT NULL")
     else:
         where.append("application.applied_at IS NULL")
+    if draft_cv:
+        where.append(
+            "job.id IN (SELECT job_id FROM document"
+            " WHERE kind = 'cv' AND accepted = 0)"
+        )
     clause = (" WHERE " + " AND ".join(where)) if where else ""
 
     total = conn.execute(
@@ -617,6 +622,15 @@ def dashboard(conn, hours=168, limits=None):
         (month + "%",),
     ).fetchone()["n"]
 
+    drafted_not_saved = conn.execute(
+        "SELECT COUNT(*) AS n FROM document"
+        " JOIN job ON job.id = document.job_id"
+        " LEFT JOIN application ON application.job_id = job.id"
+        " WHERE document.kind = 'cv' AND document.accepted = 0"
+        " AND job.status NOT IN ('hidden', 'rejected')"
+        " AND application.applied_at IS NULL"
+    ).fetchone()["n"]
+
     last_run = conn.execute("SELECT * FROM run_log ORDER BY id DESC LIMIT 1").fetchone()
     period = _period_label(hours)
 
@@ -636,6 +650,9 @@ def dashboard(conn, hours=168, limits=None):
              "sub": "your shortlist, all time"},
             {"key": "Applied this month", "value": applied_month, "tone": None,
              "sub": now().strftime("%B %Y")},
+            {"key": "CV drafted, not saved", "value": drafted_not_saved, "tone": "amber",
+             "sub": "Write my CV was clicked, never downloaded" if drafted_not_saved
+             else "nothing waiting"},
         ],
         "response_by_band": response_by_band(conn),
         "next_actions": next_actions(conn, all_awaiting),

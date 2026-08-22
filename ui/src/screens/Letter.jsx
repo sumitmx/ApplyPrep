@@ -117,10 +117,16 @@ export default function Letter() {
 
       {!result ? (
         <Panel>
-          <Empty title="Nothing written yet">
-            Press Write my letter. It reads the advert and your CV, then drafts under
-            250 words. You review it here before it goes anywhere.
-          </Empty>
+          {busy ? (
+            <Empty title="Writing, up to a minute...">
+              Reading the advert and your CV, then drafting under 250 words.
+            </Empty>
+          ) : (
+            <Empty title="Nothing written yet">
+              Press Write my letter. It reads the advert and your CV, then drafts under
+              250 words. You review it here before it goes anywhere.
+            </Empty>
+          )}
         </Panel>
       ) : (
         <>

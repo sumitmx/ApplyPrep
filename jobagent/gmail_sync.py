@@ -53,7 +53,7 @@ def run(conn, cfg):
         store.finish_gmail_sync(conn, sync_id, 0, 0, {"status": status, "error": str(exc)})
         return {"status": status, "scanned": 0, "stored": 0, "error": str(exc)}
 
-    query = _build_query(gcfg.get("lookback_days", 90))
+    query = _build_query(gcfg.get("lookback_days", 30))
     known = store.known_gmail_message_ids(conn)
 
     scanned = 0

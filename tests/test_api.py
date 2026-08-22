@@ -70,7 +70,7 @@ def test_dashboard(client):
     values = [c["value"] for c in body["cards"]]
     # job 1 has an application, so it's excluded from "New postings" and
     # "Worth a look" too, same as the Jobs list default.
-    assert values == [2, 1, 1, 0, 1]
+    assert values == [2, 1, 1, 0, 1, 0]
     assert all(c["key"] and c["sub"] for c in body["cards"])
     assert body["gate_counts"]["passed"] == 2
     assert len(body["response_by_band"]) == 2

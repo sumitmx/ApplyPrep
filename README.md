@@ -88,7 +88,7 @@ means the refresh token it gives you expires after about a week - if the app
 reports it needs reconnecting, step 6 is all you need to repeat.
 
 `gmail.lookback_days` in `config.yaml` controls how far back each check
-searches (default 90 days).
+searches (default 30 days).
 
 ## Sources
 

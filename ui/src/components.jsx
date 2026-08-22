@@ -171,6 +171,39 @@ export function Score({ value, label, estimated }) {
   )
 }
 
+export function ScoreRing({ value, label, size = 100, stroke = 9 }) {
+  const missing = value === null || value === undefined
+  const pct = missing ? 0 : Math.max(0, Math.min(100, value))
+  const tone = missing ? 'var(--ink-3)' : pct >= 80 ? 'var(--pine)' : pct >= 40 ? 'var(--amber)' : 'var(--rust)'
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  return (
+    <div className="scoring">
+      <svg width={size} height={size} viewBox={'0 0 ' + size + ' ' + size}>
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none"
+          stroke="var(--line)" strokeWidth={stroke}
+        />
+        {!missing && (
+          <circle
+            cx={size / 2} cy={size / 2} r={r} fill="none"
+            stroke={tone} strokeWidth={stroke} strokeLinecap="round"
+            strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)}
+            transform={'rotate(-90 ' + size / 2 + ' ' + size / 2 + ')'}
+          />
+        )}
+        <text
+          x="50%" y="50%" textAnchor="middle" dominantBaseline="central"
+          className="scoring-num"
+        >
+          {missing ? '-' : pct + '%'}
+        </text>
+      </svg>
+      {label && <div className="l">{label}</div>}
+    </div>
+  )
+}
+
 export function Toast({ message, tone = 'pine', onClose }) {
   if (!message) return null
   return (
