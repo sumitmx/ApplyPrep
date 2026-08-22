@@ -44,6 +44,14 @@ export const api = {
       body: JSON.stringify({ action, reason: reason || null }),
     }),
   applications: () => request('/applications'),
+  gmailStatus: () => request('/gmail/status'),
+  gmailConnect: () => request('/gmail/connect', { method: 'POST' }),
+  gmailSync: () => request('/gmail/sync', { method: 'POST' }),
+  gmailSuggestions: () => request('/gmail/suggestions'),
+  applyGmailSuggestion: (emailId) =>
+    request('/gmail/suggestions/' + emailId + '/apply', { method: 'POST' }),
+  dismissGmailSuggestion: (emailId) =>
+    request('/gmail/suggestions/' + emailId + '/dismiss', { method: 'POST' }),
   setApplicationStatus: (id, status, note) =>
     request('/applications/' + id, {
       method: 'POST',

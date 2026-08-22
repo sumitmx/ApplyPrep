@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import agent, config, documents, profile, pull, service, store
+from .gmail import auth as gmail_auth
 from .documents import layout, palette
 
 UI_DIST = Path(__file__).resolve().parents[1] / "ui" / "dist"
@@ -309,6 +310,63 @@ def create_app(cfg=None):
             return result
         finally:
             conn.close()
+
+    @app.get("/api/gmail/status")
+    def get_gmail_status():
+        conn = db()
+        try:
+            return service.gmail_status(conn, cfg)
+        finally:
+            conn.close()
+
+    @app.post("/api/gmail/connect")
+    def post_gmail_connect():
+        conn = db()
+        try:
+            record = service.gmail_connect(conn, cfg)
+        except gmail_auth.GmailAuthError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        finally:
+            conn.close()
+        return {"connected": True, "account_email": record.get("account_email")}
+
+    @app.post("/api/gmail/sync")
+    def post_gmail_sync():
+        conn = db()
+        try:
+            return service.gmail_sync_and_match(conn, cfg)
+        finally:
+            conn.close()
+
+    @app.get("/api/gmail/suggestions")
+    def get_gmail_suggestions():
+        conn = db()
+        try:
+            return {"suggestions": service.gmail_suggestions(conn)}
+        finally:
+            conn.close()
+
+    @app.post("/api/gmail/suggestions/{email_id}/apply")
+    def post_apply_gmail_suggestion(email_id: int):
+        conn = db()
+        try:
+            result = service.apply_gmail_suggestion(conn, email_id)
+        finally:
+            conn.close()
+        if result is None:
+            raise HTTPException(status_code=404, detail="nothing to apply")
+        return result
+
+    @app.post("/api/gmail/suggestions/{email_id}/dismiss")
+    def post_dismiss_gmail_suggestion(email_id: int):
+        conn = db()
+        try:
+            result = service.dismiss_gmail_suggestion(conn, email_id)
+        finally:
+            conn.close()
+        if result is None:
+            raise HTTPException(status_code=404, detail="not found")
+        return result
 
     @app.get("/api/master-cv")
     def get_master_cv():

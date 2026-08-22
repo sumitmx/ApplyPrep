@@ -8,7 +8,8 @@ from . import agent
 from . import chat as chat_module
 from . import dedup as dedup_module
 from . import documents as documents_module
-from . import profile, rating, skills as skills_module, store
+from . import gmail_match, gmail_sync, profile, rating, skills as skills_module, store
+from .gmail import auth as gmail_auth
 from .documents import palette, pdf, render, tailor
 from .documents.guard import known_bullets
 
@@ -1374,6 +1375,72 @@ def bullet_usage(conn, master):
         })
     bullets.sort(key=lambda b: b["drop_rate"], reverse=True)
     return {"documents_considered": considered, "bullets": bullets[:8]}
+
+
+def gmail_status(conn, cfg):
+    gcfg = cfg.get("gmail") or {}
+    token = gmail_auth.load_token(conn)
+    last = store.latest_gmail_sync(conn)
+    pending = len(store.pending_email_suggestions(conn))
+    secret_path = gcfg.get("client_secret_path", "gmail_client_secret.json")
+    return {
+        "connected": bool(token and token.get("refresh_token")),
+        "account_email": (token or {}).get("account_email"),
+        "client_secret_path": secret_path,
+        "client_secret_present": Path(secret_path).exists(),
+        "last_sync": last,
+        "pending_suggestions": pending,
+    }
+
+
+def gmail_connect(conn, cfg):
+    gcfg = cfg.get("gmail") or {}
+    return gmail_auth.connect(conn, gcfg.get("client_secret_path", "gmail_client_secret.json"))
+
+
+def gmail_sync_and_match(conn, cfg):
+    result = gmail_sync.run(conn, cfg)
+    result.update(gmail_match.run(conn))
+    return result
+
+
+def gmail_suggestions(conn):
+    return [
+        {
+            "email_id": r["id"],
+            "application_id": r["application_id"],
+            "job_id": r["job_id"],
+            "title": r["title"],
+            "company": r["company_name"],
+            "current_status": r["current_status"],
+            "suggested_status": r["suggested_status"],
+            "subject": r["subject"],
+            "sender": r["sender"],
+            "snippet": r["snippet"],
+            "received_at": r["received_at"],
+        }
+        for r in store.pending_email_suggestions(conn)
+    ]
+
+
+def apply_gmail_suggestion(conn, email_id):
+    email = store.get_application_email(conn, email_id)
+    if not email or not email.get("application_id") or not email.get("suggested_status"):
+        return None
+    set_application_status(
+        conn, email["application_id"], email["suggested_status"],
+        note="from a Gmail reply",
+    )
+    store.mark_application_email_reviewed(conn, email_id)
+    return {"email_id": email_id, "status": email["suggested_status"]}
+
+
+def dismiss_gmail_suggestion(conn, email_id):
+    email = store.get_application_email(conn, email_id)
+    if not email:
+        return None
+    store.mark_application_email_reviewed(conn, email_id)
+    return {"email_id": email_id, "dismissed": True}
 
 
 def sponsorship_mix(conn):

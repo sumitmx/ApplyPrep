@@ -509,3 +509,6 @@ a{color:inherit;text-decoration:none}
   border-radius:var(--r);background:var(--canvas);color:var(--ink);
 }
 .topicbox:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+
+.gmailrow{border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;margin-bottom:10px}
+.gmailrow-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px}

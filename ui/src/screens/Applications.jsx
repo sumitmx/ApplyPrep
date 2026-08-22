@@ -35,8 +35,57 @@ export default function Applications() {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(null)
 
+  const [gmail, setGmail] = useState(null)
+  const [suggestions, setSuggestions] = useState(null)
+  const [gmailBusy, setGmailBusy] = useState(null)
+  const [gmailError, setGmailError] = useState(null)
+
   const load = () => api.applications().then(setData).catch(setError)
-  useEffect(() => { load() }, [])
+  const loadGmail = () => {
+    api.gmailStatus().then(setGmail).catch(() => {})
+    api.gmailSuggestions().then((d) => setSuggestions(d.suggestions)).catch(() => {})
+  }
+  useEffect(() => { load(); loadGmail() }, [])
+
+  const connectGmail = async () => {
+    setGmailBusy('connect')
+    setGmailError(null)
+    try {
+      await api.gmailConnect()
+      loadGmail()
+    } catch (e) {
+      setGmailError(e)
+    } finally {
+      setGmailBusy(null)
+    }
+  }
+
+  const syncGmail = async () => {
+    setGmailBusy('sync')
+    setGmailError(null)
+    try {
+      await api.gmailSync()
+      loadGmail()
+    } catch (e) {
+      setGmailError(e)
+    } finally {
+      setGmailBusy(null)
+    }
+  }
+
+  const actOnSuggestion = async (emailId, action) => {
+    setGmailBusy(emailId)
+    try {
+      if (action === 'apply') await api.applyGmailSuggestion(emailId)
+      else await api.dismissGmailSuggestion(emailId)
+      setSuggestions((prev) => prev.filter((s) => s.email_id !== emailId))
+      load()
+    } catch (e) {
+      setGmailError(e)
+    } finally {
+      setGmailBusy(null)
+    }
+  }
 
   const changeStatus = async (row, status) => {
     setBusy(row.id)
@@ -93,25 +142,86 @@ export default function Applications() {
         </Panel>
       </div>
 
-      <Panel title="Every stage, by the numbers">
+      <Panel
+        title="Responses from your inbox"
+        note={gmail && gmail.connected ? gmail.account_email : null}
+      >
         <div className="pbody">
-          {data.funnel.map((f) => (
-            <div key={f.key} style={{ marginBottom: 10 }}>
-              <div className="dim">
-                <span>{STATUS_LABEL[f.key] || f.key}</span>
-                <span>{f.value}</span>
+          {!gmail ? <Loading /> : !gmail.connected ? (
+            <Empty
+              title={gmail.client_secret_present ? 'Gmail is not connected yet' : 'Gmail is not set up yet'}
+              actions={gmail.client_secret_present && (
+                <button className="btn pri" onClick={connectGmail} disabled={gmailBusy === 'connect'}>
+                  {gmailBusy === 'connect' ? 'Connecting...' : 'Connect Gmail'}
+                </button>
+              )}
+            >
+              {gmail.client_secret_present ? (
+                <>
+                  Reads replies from job applications and suggests a status for
+                  each one - nothing changes until you approve it here.
+                </>
+              ) : (
+                <>
+                  Needs a one-time Google credential file before it can connect.
+                  Ask your assistant for the setup steps, or see the project's
+                  README.
+                </>
+              )}
+            </Empty>
+          ) : (
+            <>
+              <div className="btns" style={{ marginBottom: 12, justifyContent: 'space-between' }}>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {gmail.last_sync && gmail.last_sync.finished_at
+                    ? 'Last checked ' + formatDate(gmail.last_sync.finished_at)
+                    : 'Never checked yet'}
+                </span>
+                <button className="btn sm" onClick={syncGmail} disabled={gmailBusy === 'sync'}>
+                  {gmailBusy === 'sync' ? 'Checking...' : 'Check inbox now'}
+                </button>
               </div>
-              <div className="bar">
-                <i
-                  className={f.key === 'rejected' ? 'amb' : ''}
-                  style={{
-                    width: (100 * f.value / maxFunnel) + '%',
-                    background: 'var(--' + (STATUS_TONE[f.key] || 'slate') + ')',
-                  }}
-                />
-              </div>
-            </div>
-          ))}
+              <ErrorBox error={gmailError} />
+              {!suggestions ? <Loading /> : suggestions.length === 0 ? (
+                <Empty title="Nothing to review">
+                  No unread replies look like a status change right now.
+                </Empty>
+              ) : (
+                suggestions.map((s) => (
+                  <div key={s.email_id} className="gmailrow">
+                    <div className="gmailrow-head">
+                      <div>
+                        <b>{s.title}</b>
+                        <span className="muted"> @ {s.company}</span>
+                      </div>
+                      <Pill tone={STATUS_TONE[s.suggested_status] || 'slate'}>
+                        Looks like: {STATUS_LABEL[s.suggested_status] || s.suggested_status}
+                      </Pill>
+                    </div>
+                    <p className="muted" style={{ fontSize: 12.5 }}>
+                      "{s.subject}" - {s.snippet}
+                    </p>
+                    <div className="btns">
+                      <button
+                        className="btn pri sm"
+                        disabled={gmailBusy === s.email_id}
+                        onClick={() => actOnSuggestion(s.email_id, 'apply')}
+                      >
+                        Mark as {STATUS_LABEL[s.suggested_status] || s.suggested_status}
+                      </button>
+                      <button
+                        className="btn sm"
+                        disabled={gmailBusy === s.email_id}
+                        onClick={() => actOnSuggestion(s.email_id, 'dismiss')}
+                      >
+                        Not this one
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </>
+          )}
         </div>
       </Panel>
 

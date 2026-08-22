@@ -48,6 +48,42 @@ after editing the gate block, otherwise changes only affect jobs pulled later.
 `dedup` is a dry run by default and prints what it would combine. Nothing is
 merged until you add `--apply`.
 
+## Gmail replies (optional)
+
+Applications on the Applications tab can be matched against replies in your
+own Gmail inbox - a rejection, an interview invite, a screening call - and
+show up as a suggestion you approve or dismiss. Nothing is ever applied
+automatically; every match is a click you make yourself.
+
+This is entirely optional and off until you set it up. Nothing is sent
+anywhere - it only reads your inbox with Google's read-only Gmail scope, and
+the credential file and the token it gets back both stay local and gitignored.
+
+To turn it on:
+
+1. Create a project at [console.cloud.google.com](https://console.cloud.google.com/)
+   (free).
+2. Enable the **Gmail API** for that project (APIs & Services -> Library).
+3. Configure the OAuth consent screen: External, Testing mode is fine for
+   personal use, and add your own Google account as a test user.
+4. Create an OAuth Client ID of type **Desktop app** (APIs & Services ->
+   Credentials -> Create Credentials -> OAuth client ID).
+5. Download the resulting JSON and save it as `gmail_client_secret.json` in
+   this project's root folder. That exact filename is already gitignored, so
+   it never gets committed.
+6. Click **Connect Gmail** on the Applications page (or run
+   `python cli.py gmail-auth`), sign in, and grant the read-only scope. A
+   browser tab opens and closes itself once you approve it.
+7. Click **Check inbox now** whenever you want it to look for new replies -
+   or run `python cli.py gmail-sync`.
+
+Google's consent screen stays in "Testing" mode unless you publish it, which
+means the refresh token it gives you expires after about a week - if the app
+reports it needs reconnecting, step 6 is all you need to repeat.
+
+`gmail.lookback_days` in `config.yaml` controls how far back each check
+searches (default 90 days).
+
 ## Sources
 
 Aggregators, in `adapters/aggregator/`:
@@ -96,6 +132,10 @@ threshold live in the `reach` block of config.yaml.
         dedup.py        three duplicate passes, pure functions
         watchlist.py    watchlist.yaml to company records
         pull.py         orchestration
+        gmail_sync.py   harvests replies from Gmail into application_email
+        gmail_match.py  matches a harvested email to an application, guesses
+                        what it means; never applies a status by itself
+        gmail/          OAuth (PKCE) + a thin Gmail API client
         service.py      shared query layer for FastAPI and MCP
         api.py          FastAPI routes, serves ui/dist
         agent.py        the only module that invokes a model

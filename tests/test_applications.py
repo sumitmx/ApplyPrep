@@ -206,3 +206,63 @@ def test_response_mix_counts_a_rejection_as_having_heard_back(conn):
     service.set_application_status(conn, app_id, "rejected")
     mix = {r["key"]: r["value"] for r in service.applications(conn)["response_mix"]}
     assert mix == {"drafting": 0, "awaiting": 0, "responded": 1}
+
+
+def _job_with_application(conn, i, company, status="applied"):
+    src = store.source_id(conn, "arbeitnow", "aggregator")
+    store.upsert_job(conn, {
+        "dedup_key": "gk" + str(i), "title": "Role " + str(i), "company_name": company,
+        "country": "DE", "url": "https://example.test/g" + str(i), "description": "d",
+        "posted_at": "2026-08-01T00:00:00+00:00", "source_ids": [src],
+    })
+    store.start_application(conn, i)
+    app_id = conn.execute("SELECT id FROM application WHERE job_id = ?", (i,)).fetchone()["id"]
+    conn.execute("UPDATE application SET status = ? WHERE id = ?", (status, app_id))
+    conn.commit()
+    return app_id
+
+
+def test_gmail_status_reports_disconnected_with_no_token(conn):
+    status = service.gmail_status(conn, {"gmail": {}})
+    assert status["connected"] is False
+    assert status["account_email"] is None
+    assert status["pending_suggestions"] == 0
+
+
+def test_applying_a_suggestion_advances_the_application_and_consumes_it(conn):
+    app_id = _job_with_application(conn, 2, "Acme")
+    store.save_application_email(conn, {
+        "gmail_message_id": "s1", "sender": "hr@acme.com", "sender_domain": "acme.com",
+        "subject": "Interview invite", "snippet": "We would like to invite you to interview.",
+    })
+    store.link_application_email(conn, 1, app_id, "interview")
+
+    result = service.apply_gmail_suggestion(conn, 1)
+    assert result == {"email_id": 1, "status": "interview"}
+    row = conn.execute("SELECT status FROM application WHERE id = ?", (app_id,)).fetchone()
+    assert row["status"] == "interview"
+    assert service.gmail_suggestions(conn) == []
+
+
+def test_dismissing_a_suggestion_leaves_the_status_untouched(conn):
+    app_id = _job_with_application(conn, 2, "Acme")
+    store.save_application_email(conn, {
+        "gmail_message_id": "s2", "sender": "hr@acme.com", "sender_domain": "acme.com",
+        "subject": "Update", "snippet": "Unfortunately, not moving forward.",
+    })
+    store.link_application_email(conn, 1, app_id, "rejected")
+
+    service.dismiss_gmail_suggestion(conn, 1)
+    row = conn.execute("SELECT status FROM application WHERE id = ?", (app_id,)).fetchone()
+    assert row["status"] == "applied"
+    assert service.gmail_suggestions(conn) == []
+
+
+def test_a_suggestion_with_no_classification_is_not_listed(conn):
+    app_id = _job_with_application(conn, 2, "Acme")
+    store.save_application_email(conn, {
+        "gmail_message_id": "s3", "sender": "hr@acme.com", "sender_domain": "acme.com",
+        "subject": "Thanks", "snippet": "We received your application.",
+    })
+    store.link_application_email(conn, 1, app_id, None)
+    assert service.gmail_suggestions(conn) == []

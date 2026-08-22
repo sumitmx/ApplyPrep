@@ -541,3 +541,51 @@ def test_pasting_without_a_description_is_rejected(client):
     resp = client.post("/api/jobs/paste", json={**PASTE, "description": "  "})
     assert resp.status_code == 400
     assert "description" in resp.json()["detail"]
+
+
+def test_gmail_status_endpoint_reports_disconnected(client):
+    body = client.get("/api/gmail/status").json()
+    assert body["connected"] is False
+    assert body["pending_suggestions"] == 0
+
+
+def test_gmail_connect_reports_a_clear_error_with_no_client_secret(client, tmp_path):
+    resp = client.post("/api/gmail/connect")
+    assert resp.status_code == 400
+    assert "client secret" in resp.json()["detail"].lower()
+
+
+def test_gmail_suggestions_lists_a_linked_and_classified_email(client):
+    from jobagent import store as store_module
+    conn = store_module.connect(client.db_path)
+    src = store_module.source_id(conn, "arbeitnow", "aggregator")
+    store_module.upsert_job(conn, {
+        "dedup_key": "gk", "title": "Role", "company_name": "Acme",
+        "url": "https://x.test", "source_ids": [src],
+    })
+    job_id = conn.execute("SELECT id FROM job WHERE dedup_key = 'gk'").fetchone()["id"]
+    conn.execute("UPDATE job SET gate_status = 'passed' WHERE id = ?", (job_id,))
+    conn.commit()
+    app = store_module.start_application(conn, job_id)
+    store_module.save_application_email(conn, {
+        "gmail_message_id": "api1", "sender": "hr@acme.com", "sender_domain": "acme.com",
+        "subject": "Update", "snippet": "not moving forward",
+    })
+    email_id = conn.execute(
+        "SELECT id FROM application_email WHERE gmail_message_id = 'api1'"
+    ).fetchone()["id"]
+    store_module.link_application_email(conn, email_id, app["id"], "rejected")
+    conn.close()
+
+    body = client.get("/api/gmail/suggestions").json()
+    assert len(body["suggestions"]) == 1
+    assert body["suggestions"][0]["suggested_status"] == "rejected"
+
+    resp = client.post("/api/gmail/suggestions/" + str(email_id) + "/apply")
+    assert resp.status_code == 200
+    assert client.get("/api/gmail/suggestions").json()["suggestions"] == []
+
+
+def test_dismissing_an_unknown_suggestion_is_a_404(client):
+    resp = client.post("/api/gmail/suggestions/999/dismiss")
+    assert resp.status_code == 404

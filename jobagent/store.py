@@ -31,6 +31,14 @@ ADDED_COLUMNS = {
         ("word_count", "INTEGER"),
         ("accepted", "INTEGER NOT NULL DEFAULT 0"),
     ],
+    "application_email": [
+        # What the email looks like it means ('rejected', 'interview',
+        # 'screening', 'offer') - a guess, never applied without a click.
+        ("suggested_status", "TEXT"),
+        # 0 once matched and classified; 1 once the candidate has applied or
+        # dismissed the suggestion, so it stops reappearing in the review list.
+        ("reviewed", "INTEGER NOT NULL DEFAULT 0"),
+    ],
 }
 
 
@@ -187,6 +195,59 @@ def save_application_email(conn, message):
         ),
     )
     conn.commit()
+
+
+def latest_gmail_sync(conn):
+    row = conn.execute(
+        "SELECT * FROM gmail_sync_log ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def unmatched_application_emails(conn):
+    return conn.execute(
+        "SELECT id, sender, sender_domain, subject, snippet, received_at"
+        " FROM application_email WHERE application_id IS NULL"
+    ).fetchall()
+
+
+def link_application_email(conn, email_id, application_id, suggested_status):
+    conn.execute(
+        "UPDATE application_email SET application_id = ?, suggested_status = ?"
+        " WHERE id = ?",
+        (application_id, suggested_status, email_id),
+    )
+    conn.commit()
+
+
+def get_application_email(conn, email_id):
+    row = conn.execute(
+        "SELECT * FROM application_email WHERE id = ?", (email_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def mark_application_email_reviewed(conn, email_id):
+    conn.execute(
+        "UPDATE application_email SET reviewed = 1 WHERE id = ?", (email_id,)
+    )
+    conn.commit()
+
+
+def pending_email_suggestions(conn):
+    return conn.execute(
+        "SELECT application_email.id, application_email.subject,"
+        " application_email.sender, application_email.snippet,"
+        " application_email.received_at, application_email.suggested_status,"
+        " application.id AS application_id, application.status AS current_status,"
+        " job.id AS job_id, job.title, job.company_name"
+        " FROM application_email"
+        " JOIN application ON application.id = application_email.application_id"
+        " JOIN job ON job.id = application.job_id"
+        " WHERE application_email.reviewed = 0"
+        " AND application_email.suggested_status IS NOT NULL"
+        " ORDER BY application_email.received_at DESC"
+    ).fetchall()
 
 
 def raw_keys(conn, src_id):
