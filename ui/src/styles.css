@@ -512,3 +512,8 @@ a{color:inherit;text-decoration:none}
 
 .gmailrow{border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;margin-bottom:10px}
 .gmailrow-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px}
+
+.setupsteps{margin:0 0 14px;padding-left:20px;display:flex;flex-direction:column;gap:7px;
+  font-size:13px;line-height:1.5;color:var(--ink-2)}
+.setupsteps li::marker{color:var(--ink-3);font-weight:600}
+.setupsteps a{color:var(--pine);text-decoration:underline}

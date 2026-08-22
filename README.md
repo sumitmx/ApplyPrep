@@ -59,7 +59,8 @@ This is entirely optional and off until you set it up. Nothing is sent
 anywhere - it only reads your inbox with Google's read-only Gmail scope, and
 the credential file and the token it gets back both stay local and gitignored.
 
-To turn it on:
+To turn it on, click **Connect Gmail** on the Applications page. The first
+time, it walks through:
 
 1. Create a project at [console.cloud.google.com](https://console.cloud.google.com/)
    (free).
@@ -68,14 +69,19 @@ To turn it on:
    personal use, and add your own Google account as a test user.
 4. Create an OAuth Client ID of type **Desktop app** (APIs & Services ->
    Credentials -> Create Credentials -> OAuth client ID).
-5. Download the resulting JSON and save it as `gmail_client_secret.json` in
-   this project's root folder. That exact filename is already gitignored, so
-   it never gets committed.
-6. Click **Connect Gmail** on the Applications page (or run
-   `python cli.py gmail-auth`), sign in, and grant the read-only scope. A
-   browser tab opens and closes itself once you approve it.
-7. Click **Check inbox now** whenever you want it to look for new replies -
-   or run `python cli.py gmail-sync`.
+5. Paste the Client ID and Client Secret it gives you into the dialog. Both
+   are stored in your local, gitignored `jobs.db` - never in a file in the
+   repo, never committed.
+
+Saving them immediately opens a Google sign-in tab; approve it and the tab
+closes itself. Click **Check inbox now** afterwards whenever you want it to
+look for new replies.
+
+If you would rather manage the credential as a file (useful if you only ever
+use the CLI): save the downloaded JSON as `gmail_client_secret.json` in this
+project's root folder - that exact filename is already gitignored - and run
+`python cli.py gmail-auth`. A pasted credential always takes priority over
+the file if both exist.
 
 Google's consent screen stays in "Testing" mode unless you publish it, which
 means the refresh token it gives you expires after about a week - if the app

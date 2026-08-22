@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
-import { Donut, Empty, ErrorBox, Legend, Loading, Panel, Pill } from '../components'
+import { Donut, Empty, ErrorBox, GmailSetupModal, Legend, Loading, Panel, Pill }
+  from '../components'
 
 const STATUS_TONE = {
   drafting: 'slate',
@@ -39,6 +40,7 @@ export default function Applications() {
   const [suggestions, setSuggestions] = useState(null)
   const [gmailBusy, setGmailBusy] = useState(null)
   const [gmailError, setGmailError] = useState(null)
+  const [gmailSetup, setGmailSetup] = useState(false)
 
   const load = () => api.applications().then(setData).catch(setError)
   const loadGmail = () => {
@@ -58,6 +60,11 @@ export default function Applications() {
     } finally {
       setGmailBusy(null)
     }
+  }
+
+  const onConnectClick = () => {
+    if (gmail && gmail.credentials_present) connectGmail()
+    else setGmailSetup(true)
   }
 
   const syncGmail = async () => {
@@ -126,6 +133,16 @@ export default function Applications() {
 
       <ErrorBox error={error} />
 
+      {gmailSetup && (
+        <GmailSetupModal
+          onClose={() => setGmailSetup(false)}
+          onConnected={async () => {
+            setGmailSetup(false)
+            await connectGmail()
+          }}
+        />
+      )}
+
       <div className="two">
         <Panel title="Where things stand">
           <div className="pbody" style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
@@ -149,25 +166,15 @@ export default function Applications() {
         <div className="pbody">
           {!gmail ? <Loading /> : !gmail.connected ? (
             <Empty
-              title={gmail.client_secret_present ? 'Gmail is not connected yet' : 'Gmail is not set up yet'}
-              actions={gmail.client_secret_present && (
-                <button className="btn pri" onClick={connectGmail} disabled={gmailBusy === 'connect'}>
+              title="Gmail is not connected yet"
+              actions={
+                <button className="btn pri" onClick={onConnectClick} disabled={gmailBusy === 'connect'}>
                   {gmailBusy === 'connect' ? 'Connecting...' : 'Connect Gmail'}
                 </button>
-              )}
+              }
             >
-              {gmail.client_secret_present ? (
-                <>
-                  Reads replies from job applications and suggests a status for
-                  each one - nothing changes until you approve it here.
-                </>
-              ) : (
-                <>
-                  Needs a one-time Google credential file before it can connect.
-                  Ask your assistant for the setup steps, or see the project's
-                  README.
-                </>
-              )}
+              Reads replies from job applications and suggests a status for
+              each one - nothing changes until you approve it here.
             </Empty>
           ) : (
             <>

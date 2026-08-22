@@ -31,6 +31,11 @@ class AskBody(BaseModel):
     question: str
 
 
+class GmailCredentialsBody(BaseModel):
+    client_id: str
+    client_secret: str
+
+
 class PasteJobBody(BaseModel):
     title: str
     company: str
@@ -318,6 +323,17 @@ def create_app(cfg=None):
             return service.gmail_status(conn, cfg)
         finally:
             conn.close()
+
+    @app.post("/api/gmail/credentials")
+    def post_gmail_credentials(body: GmailCredentialsBody):
+        conn = db()
+        try:
+            service.gmail_save_credentials(conn, body.client_id, body.client_secret)
+        except gmail_auth.GmailAuthError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        finally:
+            conn.close()
+        return {"saved": True}
 
     @app.post("/api/gmail/connect")
     def post_gmail_connect():

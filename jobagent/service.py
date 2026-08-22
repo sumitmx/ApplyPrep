@@ -1383,14 +1383,20 @@ def gmail_status(conn, cfg):
     last = store.latest_gmail_sync(conn)
     pending = len(store.pending_email_suggestions(conn))
     secret_path = gcfg.get("client_secret_path", "gmail_client_secret.json")
+    # Either a pasted Client ID/Secret or a downloaded JSON file counts -
+    # resolve_client() prefers the pasted one but accepts either.
+    credentials_present = bool(gmail_auth.load_saved_client(conn)) or Path(secret_path).exists()
     return {
         "connected": bool(token and token.get("refresh_token")),
         "account_email": (token or {}).get("account_email"),
-        "client_secret_path": secret_path,
-        "client_secret_present": Path(secret_path).exists(),
+        "credentials_present": credentials_present,
         "last_sync": last,
         "pending_suggestions": pending,
     }
+
+
+def gmail_save_credentials(conn, client_id, client_secret):
+    return gmail_auth.save_client(conn, client_id, client_secret)
 
 
 def gmail_connect(conn, cfg):

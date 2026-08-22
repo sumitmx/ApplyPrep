@@ -44,8 +44,8 @@ def run(conn, cfg):
     sync_id = store.start_gmail_sync(conn)
 
     try:
-        client_id, client_secret = auth.load_client_secret(
-            gcfg.get("client_secret_path", "gmail_client_secret.json")
+        client_id, client_secret = auth.resolve_client(
+            conn, gcfg.get("client_secret_path", "gmail_client_secret.json")
         )
         access_token = auth.get_valid_access_token(conn, client_id, client_secret)
     except auth.GmailAuthError as exc:

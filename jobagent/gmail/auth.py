@@ -17,6 +17,10 @@ AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 TOKEN_SETTING_KEY = "gmail_token"
+# The OAuth client id/secret, pasted in through the app rather than a
+# downloaded JSON file sitting on disk. Lives in the same gitignored
+# database as the token itself.
+CLIENT_SETTING_KEY = "gmail_client"
 EXPIRY_SKEW_SECONDS = 60
 
 
@@ -44,6 +48,37 @@ def load_client_secret(path):
         return data["client_id"], data["client_secret"]
     except (KeyError, ValueError) as exc:
         raise GmailAuthError("Could not read client id/secret from " + str(file)) from exc
+
+
+def save_client(conn, client_id, client_secret):
+    """Store a pasted Client ID/Secret - the app-side alternative to placing a
+    downloaded JSON file on disk. Kept in the same local, gitignored database
+    as the OAuth token itself."""
+    client_id = (client_id or "").strip()
+    client_secret = (client_secret or "").strip()
+    if not client_id or not client_secret:
+        raise GmailAuthError("Both the Client ID and Client Secret are needed.")
+    store.set_setting(
+        conn, CLIENT_SETTING_KEY, json.dumps({"client_id": client_id, "client_secret": client_secret})
+    )
+    return {"client_id": client_id}
+
+
+def load_saved_client(conn):
+    raw = store.get_setting(conn, CLIENT_SETTING_KEY)
+    if not raw:
+        return None
+    data = json.loads(raw)
+    return data["client_id"], data["client_secret"]
+
+
+def resolve_client(conn, client_secret_path):
+    """Pasted credentials win when present; a JSON file on disk is the
+    fallback for anyone who set it up the file-based way already."""
+    saved = load_saved_client(conn)
+    if saved:
+        return saved
+    return load_client_secret(client_secret_path)
 
 
 def _pkce_pair():
@@ -136,7 +171,7 @@ def load_token(conn):
 
 
 def connect(conn, client_secret_path, timeout=180):
-    client_id, client_secret = load_client_secret(client_secret_path)
+    client_id, client_secret = resolve_client(conn, client_secret_path)
     verifier, challenge = _pkce_pair()
     state = secrets.token_urlsafe(16)
 

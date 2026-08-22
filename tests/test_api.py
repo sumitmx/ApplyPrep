@@ -547,6 +547,20 @@ def test_gmail_status_endpoint_reports_disconnected(client):
     body = client.get("/api/gmail/status").json()
     assert body["connected"] is False
     assert body["pending_suggestions"] == 0
+    assert body["credentials_present"] is False
+
+
+def test_saving_gmail_credentials_makes_them_present(client):
+    resp = client.post("/api/gmail/credentials",
+                        json={"client_id": "abc", "client_secret": "shh"})
+    assert resp.status_code == 200
+    assert client.get("/api/gmail/status").json()["credentials_present"] is True
+
+
+def test_saving_blank_gmail_credentials_is_rejected(client):
+    resp = client.post("/api/gmail/credentials",
+                        json={"client_id": "", "client_secret": "shh"})
+    assert resp.status_code == 400
 
 
 def test_gmail_connect_reports_a_clear_error_with_no_client_secret(client, tmp_path):

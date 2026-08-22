@@ -399,3 +399,89 @@ export function PasteJobModal({ onClose, onCreated }) {
     </div>
   )
 }
+
+export function GmailSetupModal({ onClose, onConnected }) {
+  const [clientId, setClientId] = useState('')
+  const [clientSecret, setClientSecret] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const ready = clientId.trim() && clientSecret.trim()
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!ready || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.gmailSaveCredentials(clientId.trim(), clientSecret.trim())
+      await onConnected()
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="modalbackdrop" onClick={onClose}>
+      <form className="modalcard" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <div className="chathead">
+          <div>
+            <b>Connect Gmail</b>
+            <div className="muted" style={{ fontSize: 12 }}>
+              A one-time Google setup, done once. Everything below stays on
+              your machine - nothing is sent anywhere but Google.
+            </div>
+          </div>
+          <button className="chatx" type="button" onClick={onClose} aria-label="Close">x</button>
+        </div>
+
+        <div className="modalbody">
+          <ol className="setupsteps">
+            <li>
+              Create a free project at{' '}
+              <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">
+                console.cloud.google.com
+              </a>.
+            </li>
+            <li>Enable the <b>Gmail API</b> for it (APIs &amp; Services &rarr; Library).</li>
+            <li>
+              Configure the OAuth consent screen: External, Testing mode is
+              fine, and add your own Google account as a test user.
+            </li>
+            <li>
+              Create an OAuth Client ID of type <b>Desktop app</b> (APIs &amp;
+              Services &rarr; Credentials &rarr; Create Credentials).
+            </li>
+            <li>Paste the Client ID and Client Secret it gives you below.</li>
+          </ol>
+
+          <div className="field">
+            <label htmlFor="g-client-id">Client ID</label>
+            <input id="g-client-id" value={clientId} onChange={(e) => setClientId(e.target.value)}
+                   placeholder="1234567890-abc...apps.googleusercontent.com" autoFocus />
+          </div>
+          <div className="field">
+            <label htmlFor="g-client-secret">Client Secret</label>
+            <input id="g-client-secret" type="password" value={clientSecret}
+                   onChange={(e) => setClientSecret(e.target.value)} placeholder="GOCSPX-..." />
+          </div>
+
+          <p className="muted" style={{ fontSize: 12 }}>
+            Both stay in your local database only, never in the code or in
+            git. After saving, a Google sign-in tab opens - approve it and
+            this closes on its own.
+          </p>
+        </div>
+
+        <ErrorBox error={error} />
+        <div className="modalfoot">
+          <button className="btn" type="button" onClick={onClose}>Cancel</button>
+          <button className="btn pri" type="submit" disabled={!ready || busy}>
+            {busy ? 'Connecting...' : 'Save & Connect'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}

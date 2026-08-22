@@ -45,6 +45,11 @@ export const api = {
     }),
   applications: () => request('/applications'),
   gmailStatus: () => request('/gmail/status'),
+  gmailSaveCredentials: (clientId, clientSecret) =>
+    request('/gmail/credentials', {
+      method: 'POST',
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+    }),
   gmailConnect: () => request('/gmail/connect', { method: 'POST' }),
   gmailSync: () => request('/gmail/sync', { method: 'POST' }),
   gmailSuggestions: () => request('/gmail/suggestions'),

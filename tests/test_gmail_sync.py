@@ -136,3 +136,27 @@ def test_sync_paginates_through_results(conn, monkeypatch):
     result = gmail_sync.run(conn, BASE_CFG)
     assert result["scanned"] == 2
     assert result["stored"] == 2
+
+
+def test_save_client_stores_a_pasted_id_and_secret(conn):
+    auth.save_client(conn, " abc123.apps.googleusercontent.com ", " shh ")
+    assert auth.load_saved_client(conn) == ("abc123.apps.googleusercontent.com", "shh")
+
+
+def test_save_client_rejects_a_blank_field(conn):
+    with pytest.raises(auth.GmailAuthError):
+        auth.save_client(conn, "", "secret")
+
+
+def test_resolve_client_prefers_a_pasted_credential_over_the_file(conn, monkeypatch):
+    auth.save_client(conn, "pasted-id", "pasted-secret")
+    monkeypatch.setattr(
+        auth, "load_client_secret",
+        lambda path: (_ for _ in ()).throw(AssertionError("should not read the file")),
+    )
+    assert auth.resolve_client(conn, "unused.json") == ("pasted-id", "pasted-secret")
+
+
+def test_resolve_client_falls_back_to_the_file_with_nothing_pasted(conn, monkeypatch):
+    monkeypatch.setattr(auth, "load_client_secret", lambda path: ("file-id", "file-secret"))
+    assert auth.resolve_client(conn, "some.json") == ("file-id", "file-secret")
