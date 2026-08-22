@@ -14,8 +14,9 @@ _FENCE = re.compile(r"^```[a-zA-Z]*\n(.*)\n```$", re.DOTALL)
 
 PROVIDERS = {
     "claude": {
-        "label": "Claude",
+        "label": "Claude (Sonnet)",
         "command": "claude",
+        "model": "claude-sonnet-5",
         "setup_hint": "Install Claude Code and sign in, then this works on your "
                        "existing subscription with no API key.",
     },

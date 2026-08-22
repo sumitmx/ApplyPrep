@@ -29,9 +29,11 @@ def capture_argv(monkeypatch):
     return calls
 
 
-def test_plain_claude_has_no_model_flag(capture_argv):
+def test_plain_claude_is_pinned_to_sonnet(capture_argv):
     agent.run("hello", provider="claude")
-    assert capture_argv[0] == ["claude", "-p", "--output-format", "text"]
+    assert capture_argv[0] == [
+        "claude", "-p", "--model", "claude-sonnet-5", "--output-format", "text",
+    ]
 
 
 def test_claude_opus5_adds_model_flag(capture_argv):
@@ -80,6 +82,8 @@ def test_model_shows_pinned_model_for_opus5():
     assert agent.model("claude-opus5") == "claude-opus-5"
 
 
-def test_model_falls_back_to_local_config_reader_for_plain_claude(monkeypatch):
-    monkeypatch.setattr(agent, "_configured_model_claude", lambda: "sonnet")
-    assert agent.model("claude") == "sonnet"
+def test_model_reports_the_pinned_sonnet_for_plain_claude(monkeypatch):
+    """Plain "Claude" is pinned to Sonnet, so the local-config reader is never
+    consulted for it - the pin always wins."""
+    monkeypatch.setattr(agent, "_configured_model_claude", lambda: "some-other-model")
+    assert agent.model("claude") == "claude-sonnet-5"
