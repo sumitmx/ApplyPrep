@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
-import { Empty, ErrorBox, Loading, Panel, Pill } from '../components'
+import { Donut, Empty, ErrorBox, Legend, Loading, Panel, Pill } from '../components'
 
 const STATUS_TONE = {
   drafting: 'slate',
@@ -55,6 +55,11 @@ export default function Applications() {
 
   const total = data.rows.length
   const maxFunnel = Math.max(1, ...data.funnel.map((f) => f.value))
+  const funnelSegments = data.funnel.map((f) => ({
+    key: f.key, label: STATUS_LABEL[f.key] || f.key, tone: STATUS_TONE[f.key] || 'slate',
+    value: f.value,
+  }))
+  const responseSegments = data.response_mix || []
 
   return (
     <div>
@@ -72,7 +77,23 @@ export default function Applications() {
 
       <ErrorBox error={error} />
 
-      <Panel title="Where things stand">
+      <div className="two">
+        <Panel title="Where things stand">
+          <div className="pbody" style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+            <Donut segments={funnelSegments} />
+            <Legend items={funnelSegments} />
+          </div>
+        </Panel>
+
+        <Panel title="Have they replied" note="drafting isn't sent yet; rejected still counts as a reply">
+          <div className="pbody" style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+            <Donut segments={responseSegments} />
+            <Legend items={responseSegments} />
+          </div>
+        </Panel>
+      </div>
+
+      <Panel title="Every stage, by the numbers">
         <div className="pbody">
           {data.funnel.map((f) => (
             <div key={f.key} style={{ marginBottom: 10 }}>

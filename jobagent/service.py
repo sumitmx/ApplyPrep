@@ -766,9 +766,21 @@ def applications(conn):
         " FROM application JOIN job ON job.id = application.job_id" + LATEST_SCORE +
         " ORDER BY application.applied_at DESC, application.id DESC"
     ).fetchall()
+    responded = sum(counts[s] for s in RESPONDED if s != "rejected") + counts["rejected"]
     return {
         "funnel": [{"key": s, "value": counts[s]} for s in FUNNEL],
         "rows": [dict(r) for r in rows],
+        # A second read on the same numbers: not "what stage", but "have they
+        # even heard back" - drafting hasn't been sent, applied is a still-open
+        # wait, and screening/interview/offer/rejected all count as a reply.
+        "response_mix": [
+            {"key": "drafting", "label": "Still drafting", "tone": "slate",
+             "value": counts["drafting"]},
+            {"key": "awaiting", "label": "Awaiting a reply", "tone": "amber",
+             "value": counts["applied"]},
+            {"key": "responded", "label": "Heard back", "tone": "pine",
+             "value": responded},
+        ],
     }
 
 

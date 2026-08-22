@@ -182,3 +182,27 @@ def test_a_cv_drafted_before_saving_leaves_a_manual_drafting_choice_alone(conn):
     store.save_document(conn, 1, "cv", payload=CV_PAYLOAD)
     status = conn.execute("SELECT status FROM application WHERE job_id = 1").fetchone()
     assert status["status"] == "drafting"
+
+
+def test_response_mix_splits_drafting_awaiting_and_heard_back(conn):
+    service.start_application(conn, 1)
+    app_id = conn.execute("SELECT id FROM application WHERE job_id = 1").fetchone()["id"]
+
+    mix = {r["key"]: r["value"] for r in service.applications(conn)["response_mix"]}
+    assert mix == {"drafting": 1, "awaiting": 0, "responded": 0}
+
+    service.set_application_status(conn, app_id, "applied")
+    mix = {r["key"]: r["value"] for r in service.applications(conn)["response_mix"]}
+    assert mix == {"drafting": 0, "awaiting": 1, "responded": 0}
+
+    service.set_application_status(conn, app_id, "interview")
+    mix = {r["key"]: r["value"] for r in service.applications(conn)["response_mix"]}
+    assert mix == {"drafting": 0, "awaiting": 0, "responded": 1}
+
+
+def test_response_mix_counts_a_rejection_as_having_heard_back(conn):
+    service.start_application(conn, 1)
+    app_id = conn.execute("SELECT id FROM application WHERE job_id = 1").fetchone()["id"]
+    service.set_application_status(conn, app_id, "rejected")
+    mix = {r["key"]: r["value"] for r in service.applications(conn)["response_mix"]}
+    assert mix == {"drafting": 0, "awaiting": 0, "responded": 1}
