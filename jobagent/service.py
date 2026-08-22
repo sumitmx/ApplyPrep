@@ -801,12 +801,6 @@ def set_application_status(conn, application_id, status, note=None):
     return {"id": application_id, "status": status, "note": note}
 
 
-def mark_applied_if_new(conn, job_id):
-    app = start_application(conn, job_id)
-    if app and not app.get("applied_at"):
-        set_application_status(conn, app["id"], "applied")
-
-
 def rate_job(conn, job_id, master, user_profile, limits=None, timeout=None):
     brief = job_brief(conn, job_id, master)
     if brief is None:
@@ -902,7 +896,8 @@ def generate_cv(conn, job_id, master, timeout=None):
     )
     conn.execute("DELETE FROM document WHERE job_id = ? AND kind = 'review'", (job_id,))
     conn.commit()
-    mark_applied_if_new(conn, job_id)
+    # Generating a draft is only a preview - the job is not "applied" until the
+    # candidate actually saves it, which accept_document handles.
     result["job"] = {"id": job["id"], "title": job["title"], "company": job["company"]}
     return result
 
@@ -929,7 +924,6 @@ def generate_letter(conn, job_id, master, user_profile, timeout=None):
         word_count=result["word_count"],
         master_version=(master.get("identity") or {}).get("name"),
     )
-    mark_applied_if_new(conn, job_id)
     result["job"] = {"id": job["id"], "title": job["title"], "company": job["company"]}
     return result
 
