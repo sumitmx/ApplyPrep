@@ -192,3 +192,37 @@ def test_keyword_coverage_handles_no_documents(tmp_path):
     conn = _conn(tmp_path)
     assert service.keyword_coverage(conn) == {"average": None, "jobs": []}
     conn.close()
+
+
+def test_language_mix_counts_german_vs_english(tmp_path):
+    conn = _conn(tmp_path)
+    for i, lang in enumerate(["de", "en", None], start=1):
+        src = store.source_id(conn, "arbeitnow", "aggregator")
+        store.upsert_job(conn, {
+            "dedup_key": "kl" + str(i), "title": "Role", "company_name": "Co",
+            "country": "DE", "url": "https://example.test/l" + str(i), "description": "d",
+            "posted_at": "2026-08-01T00:00:00+00:00", "source_ids": [src],
+            "language_required": lang,
+        })
+    conn.execute("UPDATE job SET gate_status = 'passed'")
+    conn.commit()
+    mix = {row["key"]: row["value"] for row in service.language_mix(conn)}
+    assert mix == {"english": 2, "german": 1}
+    conn.close()
+
+
+def test_agency_mix_counts_direct_vs_agency(tmp_path):
+    conn = _conn(tmp_path)
+    for i, agency in enumerate([True, False, False], start=1):
+        src = store.source_id(conn, "arbeitnow", "aggregator")
+        store.upsert_job(conn, {
+            "dedup_key": "ka" + str(i), "title": "Role", "company_name": "Co",
+            "country": "DE", "url": "https://example.test/a" + str(i), "description": "d",
+            "posted_at": "2026-08-01T00:00:00+00:00", "source_ids": [src],
+            "via_agency": agency,
+        })
+    conn.execute("UPDATE job SET gate_status = 'passed'")
+    conn.commit()
+    mix = {row["key"]: row["value"] for row in service.agency_mix(conn)}
+    assert mix == {"direct": 2, "agency": 1}
+    conn.close()

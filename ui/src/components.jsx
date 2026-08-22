@@ -54,14 +54,14 @@ export function Bar({ value, max = 100, tone }) {
   )
 }
 
-export function BarList({ rows, emptyText = 'Nothing here yet', wide = false }) {
+export function BarList({ rows, emptyText = 'Nothing here yet', wide = false, titled = false }) {
   const navigate = useNavigate()
   const max = Math.max(1, ...rows.map((r) => r.value))
   if (!rows.some((r) => r.value > 0)) {
     return <div className="empty" style={{ padding: '18px 6px' }}>{emptyText}</div>
   }
   return (
-    <div className={'barlist' + (wide ? ' wide' : '')}>
+    <div className={'barlist' + (wide ? ' wide' : '') + (titled ? ' titled' : '')}>
       {rows.map((r) => {
         const pct = (r.value / max) * 100
         return (

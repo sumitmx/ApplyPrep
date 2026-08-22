@@ -1384,6 +1384,48 @@ def sponsorship_mix(conn):
     ]
 
 
+def language_mix(conn):
+    """English-only vs German-required, among the same jobs sponsorship_mix
+    counts - the two other factors (language, agency) get the same treatment
+    so all three sit on the Profile page together."""
+    rows = conn.execute(
+        "SELECT job.language_required AS lang, COUNT(*) AS n FROM job"
+        " LEFT JOIN application ON application.job_id = job.id"
+        " WHERE job.gate_status = 'passed' AND job.status NOT IN ('hidden', 'rejected')"
+        " AND application.applied_at IS NULL"
+        " GROUP BY job.language_required"
+    ).fetchall()
+    counts = {"english": 0, "german": 0}
+    for row in rows:
+        counts["german" if row["lang"] == "de" else "english"] += row["n"]
+    return [
+        {"key": "english", "label": "English is enough", "tone": "pine",
+         "value": counts["english"]},
+        {"key": "german", "label": "German needed", "tone": "amber",
+         "value": counts["german"]},
+    ]
+
+
+def agency_mix(conn):
+    """Posted directly by the employer vs through a staffing agency."""
+    rows = conn.execute(
+        "SELECT job.via_agency AS agency, COUNT(*) AS n FROM job"
+        " LEFT JOIN application ON application.job_id = job.id"
+        " WHERE job.gate_status = 'passed' AND job.status NOT IN ('hidden', 'rejected')"
+        " AND application.applied_at IS NULL"
+        " GROUP BY job.via_agency"
+    ).fetchall()
+    counts = {"direct": 0, "agency": 0}
+    for row in rows:
+        counts["agency" if row["agency"] else "direct"] += row["n"]
+    return [
+        {"key": "direct", "label": "Posted by the company", "tone": "pine",
+         "value": counts["direct"]},
+        {"key": "agency", "label": "Posted by an agency", "tone": "amber",
+         "value": counts["agency"]},
+    ]
+
+
 def keyword_coverage(conn, sample=10):
     rows = conn.execute(
         "SELECT document.job_id, document.payload, document.created_at,"

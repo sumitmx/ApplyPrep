@@ -389,6 +389,8 @@ def create_app(cfg=None):
                 ),
                 "bullet_usage": service.bullet_usage(conn, loaded),
                 "sponsorship_mix": service.sponsorship_mix(conn),
+                "language_mix": service.language_mix(conn),
+                "agency_mix": service.agency_mix(conn),
                 "keyword_coverage": service.keyword_coverage(conn),
             }
         finally:

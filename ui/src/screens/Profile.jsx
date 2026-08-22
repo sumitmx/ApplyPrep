@@ -197,6 +197,8 @@ export default function Profile() {
   }))
 
   const sponsorshipSegments = (kpis && kpis.sponsorship_mix) || []
+  const languageSegments = (kpis && kpis.language_mix) || []
+  const agencySegments = (kpis && kpis.agency_mix) || []
   const coverageRows = ((kpis && kpis.keyword_coverage && kpis.keyword_coverage.jobs) || []).map((j) => ({
     ...j, label: j.label.length > 55 ? j.label.slice(0, 55) + '…' : j.label,
   }))
@@ -417,7 +419,7 @@ export default function Profile() {
         </div>
       </Panel>
 
-      <div className="two">
+      <div className="three">
         <Panel title="Sponsorship mix" note="among jobs worth a look">
           <div className="pbody" style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
             {!kpis ? <Loading /> : (
@@ -429,7 +431,30 @@ export default function Profile() {
           </div>
         </Panel>
 
-        <Panel title="Keyword coverage" note="how much of each posting's language your CV actually uses">
+        <Panel title="Language mix" note="among jobs worth a look">
+          <div className="pbody" style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+            {!kpis ? <Loading /> : (
+              <>
+                <Donut segments={languageSegments} />
+                <Legend items={languageSegments} />
+              </>
+            )}
+          </div>
+        </Panel>
+
+        <Panel title="Direct vs agency" note="among jobs worth a look">
+          <div className="pbody" style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+            {!kpis ? <Loading /> : (
+              <>
+                <Donut segments={agencySegments} />
+                <Legend items={agencySegments} />
+              </>
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel title="Keyword coverage" note="how much of each posting's language your CV actually uses">
           <div className="pbody">
             {!kpis ? <Loading /> : (
               <>
@@ -441,12 +466,11 @@ export default function Profile() {
                     tone={kpis.keyword_coverage.average >= 66 ? 'pine' : kpis.keyword_coverage.average >= 40 ? 'amber' : undefined}
                   />
                 </div>
-                <BarList rows={coverageRows} emptyText="Tailor a CV for a job first" />
+                <BarList rows={coverageRows} titled emptyText="Tailor a CV for a job first" />
               </>
             )}
           </div>
         </Panel>
-      </div>
 
       <Toast
         message={toast && toast.message}
