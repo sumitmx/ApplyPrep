@@ -7,9 +7,16 @@ const TONE_STROKE = {
   rust: 'var(--rust)', slate: 'var(--ink-3)',
 }
 
-export function Panel({ title, note, children }) {
+export function slugify(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
+
+export function Panel({ title, note, children, id }) {
+  // Every titled panel gets a stable anchor derived from its title, so the
+  // sidebar sub-nav can jump straight to it without each screen wiring up ids.
+  const anchor = id || (title ? slugify(title) : undefined)
   return (
-    <div className="panel">
+    <div className="panel" id={anchor}>
       {title && (
         <h3>
           <span>{title}</span>
@@ -85,6 +92,40 @@ export function BarList({ rows, emptyText = 'Nothing here yet', wide = false, ti
   )
 }
 
+// Vertical bars, for comparing a handful of named totals. Grows from the
+// baseline on load; a row with an href is clickable through to those jobs.
+export function BarChart({ rows, height = 200, emptyText = 'Nothing here yet' }) {
+  const navigate = useNavigate()
+  const max = Math.max(1, ...rows.map((r) => r.value))
+  if (!rows.some((r) => r.value > 0)) {
+    return <div className="empty" style={{ padding: '18px 6px' }}>{emptyText}</div>
+  }
+  return (
+    <div className="barchart" style={{ '--bc-h': height + 'px' }}>
+      {rows.map((r, i) => (
+        <div
+          className={'bc-col' + (r.href ? ' clickable' : '')}
+          key={r.key}
+          title={r.label + ': ' + r.value}
+          onClick={r.href ? () => navigate(r.href) : undefined}
+          role={r.href ? 'button' : undefined}
+          tabIndex={r.href ? 0 : undefined}
+          onKeyDown={r.href ? (e) => { if (e.key === 'Enter') navigate(r.href) } : undefined}
+        >
+          <span className="bc-v">{r.value}</span>
+          <div className="bc-track">
+            <i
+              className={'t-' + (r.tone || 'pine')}
+              style={{ '--bc-p': (r.value / max) * 100 + '%', animationDelay: i * 70 + 'ms' }}
+            />
+          </div>
+          <span className="bc-l">{r.label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function Donut({ segments, size = 128, thickness = 18 }) {
   const navigate = useNavigate()
   const total = segments.reduce((sum, s) => sum + s.value, 0)
@@ -118,6 +159,7 @@ export function Donut({ segments, size = 128, thickness = 18 }) {
               strokeWidth={thickness}
               strokeLinecap="butt"
               strokeDasharray={s.length + ' ' + (circumference - s.length)}
+              style={{ '--circ': circumference }}
               strokeDashoffset={s.dashOffset}
               className={s.href ? 'donut-seg clickable' : 'donut-seg'}
               onClick={s.href ? () => navigate(s.href) : undefined}

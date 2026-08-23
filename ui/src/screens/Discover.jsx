@@ -1,45 +1,21 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api } from '../api'
-import { Empty, ErrorBox, Loading, Panel, Pill } from '../components'
+import {
+  BarChart, BarList, Card, Donut, Empty, ErrorBox, Legend, Loading, Panel, Pill,
+} from '../components'
 
 const MODE_LABELS = { remote: 'Remote', onsite: 'Onsite', unknown: 'Not stated' }
+const MODE_TONE = { remote: 'pine', onsite: 'mint', unknown: 'slate' }
+const SPONSOR_LABELS = { confirmed: 'Sponsors visas', denied: 'No sponsorship', unknown: 'Not mentioned' }
+const SPONSOR_TONE = { confirmed: 'pine', denied: 'rust', unknown: 'amber' }
+const LANG_TONE = { English: 'pine', German: 'amber' }
 
 function jobsLink(extra) {
   const q = new URLSearchParams({ gate: '', hours: '', ...extra })
   return '/jobs?' + q.toString()
 }
 
-function Breakdown({ title, note, rows, href }) {
-  const total = rows.reduce((sum, r) => sum + r.count, 0)
-  return (
-    <Panel title={title} note={note}>
-      <div className="pbody">
-        {rows.length === 0 ? (
-          <Empty title="Nothing pulled yet">Run a pull to populate this.</Empty>
-        ) : (
-          rows.map((r) => (
-            <div className="dim" key={r.value ?? r.key}>
-              <span>
-                {href ? (
-                  <Link to={href(r)} style={{ textDecoration: 'underline' }}>
-                    {MODE_LABELS[r.key] || r.key}
-                  </Link>
-                ) : (
-                  MODE_LABELS[r.key] || r.key
-                )}
-              </span>
-              <span>
-                {r.count}
-                {total ? '  (' + Math.round((r.count / total) * 100) + '%)' : ''}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-    </Panel>
-  )
-}
+const stamp = (s) => (s || '').replace('T', ' ').slice(0, 16)
 
 export default function Discover() {
   const [data, setData] = useState(null)
@@ -67,6 +43,39 @@ export default function Discover() {
   if (!data) return <Loading />
 
   const run = data.last_run
+  const bd = data.breakdown || {}
+  const dedup = data.dedup
+
+  const seg = (rows, { labels = {}, tones = {}, href } = {}) =>
+    (rows || []).map((r) => ({
+      key: r.key,
+      label: labels[r.key] || r.key,
+      tone: tones[r.key] || 'slate',
+      value: r.count,
+      href: href ? href(r) : undefined,
+    }))
+
+  const workMode = seg(bd.work_mode, {
+    labels: MODE_LABELS, tones: MODE_TONE,
+    href: (r) => jobsLink(r.key === 'unknown' ? {} : { remote: r.key }),
+  })
+  const sponsorship = seg(bd.sponsorship, { labels: SPONSOR_LABELS, tones: SPONSOR_TONE })
+  const language = seg(bd.language, { tones: LANG_TONE })
+
+  const boardBars = (bd.by_source || []).slice(0, 7).map((r) => ({
+    key: r.key, label: r.key, value: r.count, tone: 'pine',
+    href: jobsLink({ source: r.key }),
+  }))
+
+  const countryRows = (bd.country || []).slice(0, 7).map((r) => ({
+    key: r.key, label: r.key === 'unknown' ? 'Not stated' : r.key,
+    value: r.count, tone: r.key === 'unknown' ? 'slate' : 'pine',
+    href: r.key === 'unknown' ? undefined : jobsLink({ country: r.key }),
+  }))
+
+  const activeBoards = data.sources.filter((s) => s.state === 'done').length
+  const dupPct = dedup && dedup.total_jobs
+    ? Math.round((dedup.duplicate_jobs / dedup.total_jobs) * 100) : 0
 
   return (
     <div>
@@ -91,9 +100,73 @@ export default function Discover() {
         </div>
       )}
 
+      <div className="cards">
+        <Card
+          label="Jobs stored"
+          value={dedup ? dedup.total_jobs : '-'}
+          sub="across every board"
+          tone="pine"
+        />
+        <Card
+          label="Boards checked"
+          value={activeBoards + ' of ' + data.sources.length}
+          sub={run ? 'last run ' + stamp(run.started_at) : 'never run'}
+          tone="mint"
+        />
+        <Card
+          label="Added last run"
+          value={run ? run.new_count : '-'}
+          sub={run ? 'from ' + run.raw_count + ' listings checked' : 'no run yet'}
+          tone="amber"
+        />
+        <Card
+          label="Look like repeats"
+          value={dedup ? dedup.duplicate_jobs : '-'}
+          sub={dedup ? dupPct + '% of everything stored' : 'not checked yet'}
+          tone="rust"
+        />
+      </div>
+
+      <Panel title="Jobs by board" note="click a bar to see those jobs">
+        <div className="pbody">
+          <BarChart rows={boardBars} emptyText="Nothing pulled yet" />
+        </div>
+      </Panel>
+
+      <div className="two">
+        <Panel title="Remote or in an office" note="click a slice to see those jobs">
+          <div className="pbody chartrow">
+            <Donut segments={workMode} />
+            <Legend items={workMode} />
+          </div>
+        </Panel>
+
+        <Panel title="Where the jobs are" note="top countries, click to see those jobs">
+          <div className="pbody">
+            <BarList rows={countryRows} emptyText="Nothing pulled yet" />
+          </div>
+        </Panel>
+      </div>
+
+      <div className="two">
+        <Panel title="Visa sponsorship" note="what the adverts actually say">
+          <div className="pbody chartrow">
+            <Donut segments={sponsorship} />
+            <Legend items={sponsorship} />
+          </div>
+        </Panel>
+
+        <Panel title="Language needed">
+          <div className="pbody chartrow">
+            <Donut segments={language} />
+            <Legend items={language} />
+          </div>
+        </Panel>
+      </div>
+
       <Panel
         title="Job boards"
-        note={run ? 'last checked ' + (run.started_at || '').replace('T', ' ').slice(0, 16) : 'never checked'}
+        note={run ? 'last checked ' + stamp(run.started_at) : 'never checked'}
       >
         <div className="pbody">
           {data.sources.length === 0 ? (
@@ -112,73 +185,49 @@ export default function Discover() {
         </div>
       </Panel>
 
-      {data.breakdown && (
-        <div className="two">
-          <Breakdown
-            title="Remote or in an office"
-            note="click a row to see those jobs"
-            rows={data.breakdown.work_mode}
-            href={(r) => jobsLink(r.key === 'unknown' ? {} : { remote: r.key })}
-          />
-          <Breakdown
-            title="Where the jobs are"
-            note="click a row to see those jobs"
-            rows={data.breakdown.country}
-            href={(r) => jobsLink(r.key === 'unknown' ? {} : { country: r.key })}
-          />
-        </div>
-      )}
-
-      {data.breakdown && (
-        <div className="two">
-          <Breakdown title="Visa sponsorship" rows={data.breakdown.sponsorship} />
-          <Breakdown title="Language needed" rows={data.breakdown.language} />
-        </div>
-      )}
-
-      <Panel
-        title="Duplicate removal"
-        note={data.dedup ? data.dedup.duplicate_jobs + ' look like repeats' : null}
-      >
-        <div className="pbody">
-          {data.dedup ? (
-            <>
-              <div className="dim">
-                <span>Same web address</span><span>{data.dedup.exact_url}</span>
-              </div>
-              <div className="dim">
-                <span>Same role, different address</span><span>{data.dedup.same_role}</span>
-              </div>
-              <div className="dim">
-                <span>Reworded repost</span><span>{data.dedup.reworded}</span>
-              </div>
-              <div className="dim">
-                <span>Groups once combined</span><span>{data.dedup.groups}</span>
-              </div>
-              <p className="muted" style={{ marginTop: 11 }}>
-                The same job often appears on several boards. Nothing is merged
-                automatically. Run <code>cli.py dedup</code> to see exactly what would
-                be combined, then <code>cli.py dedup --apply</code> to do it.
-              </p>
-            </>
-          ) : (
-            <Empty title="Nothing checked yet">
-              Duplicate checking runs against the jobs already in your database.
-            </Empty>
-          )}
-        </div>
-      </Panel>
-
-      {run && (
-        <Panel title="Last search">
+      <div className="two">
+        <Panel
+          title="Duplicate removal"
+          note={dedup ? dedup.duplicate_jobs + ' look like repeats' : null}
+        >
           <div className="pbody">
-            <div className="dim"><span>Started</span><span>{(run.started_at || '').replace('T', ' ').slice(0, 16)}</span></div>
-            <div className="dim"><span>Finished</span><span>{run.finished_at ? run.finished_at.replace('T', ' ').slice(0, 16) : 'did not finish'}</span></div>
-            <div className="dim"><span>Listings checked</span><span>{run.raw_count}</span></div>
-            <div className="dim"><span>New jobs added</span><span>{run.new_count}</span></div>
+            {dedup ? (
+              <>
+                <div className="dim"><span>Same web address</span><span>{dedup.exact_url}</span></div>
+                <div className="dim"><span>Same role, different address</span><span>{dedup.same_role}</span></div>
+                <div className="dim"><span>Reworded repost</span><span>{dedup.reworded}</span></div>
+                <div className="dim"><span>Groups once combined</span><span>{dedup.groups}</span></div>
+                <p className="muted" style={{ marginTop: 11 }}>
+                  The same job often appears on several boards. Nothing is merged
+                  automatically. Run <code>cli.py dedup</code> to see exactly what would
+                  be combined, then <code>cli.py dedup --apply</code> to do it.
+                </p>
+              </>
+            ) : (
+              <Empty title="Nothing checked yet">
+                Duplicate checking runs against the jobs already in your database.
+              </Empty>
+            )}
           </div>
         </Panel>
-      )}
+
+        <Panel title="Last search">
+          <div className="pbody">
+            {run ? (
+              <>
+                <div className="dim"><span>Started</span><span>{stamp(run.started_at)}</span></div>
+                <div className="dim"><span>Finished</span><span>{run.finished_at ? stamp(run.finished_at) : 'did not finish'}</span></div>
+                <div className="dim"><span>Listings checked</span><span>{run.raw_count}</span></div>
+                <div className="dim"><span>New jobs added</span><span>{run.new_count}</span></div>
+              </>
+            ) : (
+              <Empty title="No search has run yet">
+                Press Find jobs to check the boards you have switched on.
+              </Empty>
+            )}
+          </div>
+        </Panel>
+      </div>
     </div>
   )
 }

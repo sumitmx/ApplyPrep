@@ -65,6 +65,36 @@ def seed(conn):
     conn.commit()
 
 
+def test_search_matches_title_company_and_location(client):
+    by_title = client.get("/api/search", params={"q": "architect"}).json()["results"]
+    # both titles contain but don't start with the term, and the seed gives them
+    # the same posted_at, so their relative order is not meaningful here
+    assert sorted(r["id"] for r in by_title) == [1, 2]
+
+    by_company = client.get("/api/search", params={"q": "Company 3"}).json()["results"]
+    assert [r["id"] for r in by_company] == [3]
+
+    by_city = client.get("/api/search", params={"q": "City2"}).json()["results"]
+    assert [r["id"] for r in by_city] == [2]
+
+    by_country = client.get("/api/search", params={"q": "NL"}).json()["results"]
+    assert [r["id"] for r in by_country] == [2]
+
+
+def test_search_finds_jobs_already_applied_to(client):
+    """The Jobs list hides applied jobs; search must not, or you could never look
+    one up again by name."""
+    results = client.get("/api/search", params={"q": "Principal"}).json()["results"]
+    assert [r["id"] for r in results] == [1]
+    assert results[0]["applied"] is True
+    assert results[0]["status"] == "screening"
+
+
+def test_search_ignores_too_short_a_term(client):
+    assert client.get("/api/search", params={"q": "a"}).json()["results"] == []
+    assert client.get("/api/search", params={"q": ""}).json()["results"] == []
+
+
 def test_dashboard(client):
     body = client.get("/api/dashboard").json()
     values = [c["value"] for c in body["cards"]]

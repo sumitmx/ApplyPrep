@@ -144,6 +144,14 @@ def create_app(cfg=None):
         finally:
             conn.close()
 
+    @app.get("/api/search")
+    def get_search(q: str = "", limit: int = 8):
+        conn = db()
+        try:
+            return {"query": q, "results": service.search_jobs(conn, q, limit=limit)}
+        finally:
+            conn.close()
+
     @app.post("/api/jobs/paste")
     def post_paste_job(body: PasteJobBody):
         """Add a job from a description pasted by hand.

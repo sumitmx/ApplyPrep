@@ -383,6 +383,46 @@ def jobs(conn, gate=None, country=None, min_fit=None, status=None,
             "offset": offset, "jobs": shaped, "bands": BANDS, "band_counts": counts}
 
 
+def search_jobs(conn, q, limit=8):
+    """Free-text lookup for the topbar search box.
+
+    Deliberately wider than the Jobs list: it matches title, company, city and
+    country, and unlike the list it does *not* hide jobs you have already applied
+    to - if you remember applying to something, you should be able to find it.
+    Title matches that start with the term sort first, then the newest.
+    """
+    term = " ".join((q or "").split()).lower()
+    if len(term) < 2:
+        return []
+    like = "%" + term + "%"
+    rows = conn.execute(
+        "SELECT job.id, job.title, job.company_name, job.city, job.country,"
+        " job.posted_at, application.status AS application_status,"
+        " application.applied_at AS application_applied_at"
+        " FROM job LEFT JOIN application ON application.job_id = job.id"
+        " WHERE job.status != 'hidden'"
+        " AND (LOWER(job.title) LIKE ?"
+        "   OR LOWER(COALESCE(job.company_name,'')) LIKE ?"
+        "   OR LOWER(COALESCE(job.city,'')) LIKE ?"
+        "   OR LOWER(COALESCE(job.country,'')) LIKE ?)"
+        " ORDER BY CASE WHEN LOWER(job.title) LIKE ? THEN 0 ELSE 1 END,"
+        " job.posted_at DESC, job.id DESC LIMIT ?",
+        (like, like, like, like, term + "%", max(1, min(limit, 25))),
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "company": r["company_name"],
+            "location": ", ".join([p for p in (r["city"], r["country"]) if p]),
+            "posted_age": relative_age(r["posted_at"]),
+            "status": r["application_status"],
+            "applied": r["application_applied_at"] is not None,
+        }
+        for r in rows
+    ]
+
+
 def job_detail(conn, job_id, master=None):
     row = conn.execute(
         "SELECT " + JOB_FIELDS + " FROM job" + LATEST_SCORE + " WHERE job.id = ?",

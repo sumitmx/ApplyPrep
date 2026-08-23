@@ -34,6 +34,8 @@ export const api = {
     return request('/jobs' + (s ? '?' + s : ''))
   },
   job: (id) => request('/jobs/' + id),
+  search: (q, limit = 8) =>
+    request('/search?q=' + encodeURIComponent(q) + '&limit=' + limit),
   pasteJob: (fields) =>
     request('/jobs/paste', { method: 'POST', body: JSON.stringify(fields) }),
   rate: (id) => request('/jobs/' + id + '/rate', { method: 'POST' }),
