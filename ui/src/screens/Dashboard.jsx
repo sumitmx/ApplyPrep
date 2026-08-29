@@ -12,7 +12,7 @@ function periodLabel(hours) {
 }
 
 const CARD_LINKS = {
-  'New postings': '/jobs?gate=&hours=168',
+  'New postings': '/jobs?gate=passed&hours=168',
   'Worth a look': '/jobs?gate=passed&hours=',
   'Not rated yet': '/jobs?gate=unrated',
   'You saved': '/jobs?gate=saved',
@@ -114,10 +114,11 @@ export default function Dashboard() {
           <h2>Overview</h2>
           <p>
             Everything here is stored on your laptop. Nothing on this page uses AI.
-            <b>New postings</b> is everything posted in the last{' '}
-            {periodLabel(data.window_hours)}, before filtering for fit. The other
-            cards show your current totals, not just recent activity.{' '}
-            <b>Worth a look</b> is what actually shows up in Jobs.
+            <b>New postings</b> is what passed your filters in the last{' '}
+            {periodLabel(data.window_hours)} - the boards send far more than that,
+            but the rest never reaches you. The other cards show your current
+            totals, not just recent activity.{' '}
+            <b>Worth a look</b> is the same thing with no time limit.
           </p>
         </div>
         <button className="btn pri" onClick={pull} disabled={pulling}>

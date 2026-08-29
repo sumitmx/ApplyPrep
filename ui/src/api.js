@@ -11,13 +11,25 @@ async function request(path, options) {
     } catch {
       // response was not json
     }
-    throw new Error(detail)
+    // Agent sign-in failures come back as an object carrying the fix-it steps.
+    // Copy those onto the Error so a catch block can offer help instead of just
+    // printing a sentence; plain string details keep behaving exactly as before.
+    if (detail && typeof detail === 'object') {
+      const err = new Error(detail.message || res.statusText)
+      Object.assign(err, detail)
+      err.status = res.status
+      throw err
+    }
+    const err = new Error(detail)
+    err.status = res.status
+    throw err
   }
   return res.json()
 }
 
 export const api = {
   getSettings: () => request('/settings'),
+  agentCheck: () => request('/agent/check'),
   setAiProvider: (aiProvider) =>
     request('/settings', {
       method: 'POST',

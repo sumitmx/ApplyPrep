@@ -301,7 +301,8 @@ BAND_RANK_SQL = (
 
 def jobs(conn, gate=None, country=None, min_fit=None, status=None,
          hours=None, remote=None, agency=None, source=None, band=None,
-         applied=None, draft_cv=None, limit=50, offset=0, limits=None):
+         applied=None, draft_cv=None, limit=50, offset=0, limits=None,
+         sort="best"):
     limits = limits or DEFAULT_BANDS
     band_args = [
         limits["strong_match"], limits["strong_chance"],
@@ -359,13 +360,26 @@ def jobs(conn, gate=None, country=None, min_fit=None, status=None,
         "SELECT COUNT(*) AS n FROM job" + joins + clause, args
     ).fetchone()["n"]
 
+    # "best" keeps the band-ranked order the grouped view relies on. The date
+    # sorts are a flat newest/oldest feed, so band rank drops out entirely and
+    # posted_at leads (id breaks ties for jobs sharing a timestamp).
+    if sort == "new":
+        order_sql = "job.posted_at DESC, job.id DESC"
+        order_args = []
+    elif sort == "old":
+        order_sql = "job.posted_at ASC, job.id ASC"
+        order_args = []
+    else:
+        order_sql = (BAND_RANK_SQL + " ASC, " + EFFECTIVE_REACH +
+                     " DESC, score.fit DESC, job.posted_at DESC")
+        order_args = band_args
+
     rows = conn.execute(
         "SELECT " + JOB_FIELDS + ", application.applied_at AS application_applied_at"
         " FROM job" + joins + clause +
-        " ORDER BY " + BAND_RANK_SQL + " ASC, " + EFFECTIVE_REACH +
-        " DESC, score.fit DESC, job.posted_at DESC"
+        " ORDER BY " + order_sql +
         " LIMIT ? OFFSET ?",
-        args + band_args + [limit, offset],
+        args + order_args + [limit, offset],
     ).fetchall()
     names = _source_names(conn)
     shaped = [shape_job(r, limits, names) for r in rows]
@@ -407,7 +421,7 @@ def search_jobs(conn, q, limit=8):
         "   OR LOWER(COALESCE(job.country,'')) LIKE ?)"
         " ORDER BY CASE WHEN LOWER(job.title) LIKE ? THEN 0 ELSE 1 END,"
         " job.posted_at DESC, job.id DESC LIMIT ?",
-        (like, like, like, like, term + "%", max(1, min(limit, 25))),
+        (like, like, like, like, term + "%", max(1, min(limit, 200))),
     ).fetchall()
     return [
         {
@@ -633,7 +647,10 @@ def dashboard(conn, hours=168, limits=None):
         (cutoff,),
     ):
         window_counts[row["gate_status"]] = row["n"]
-    window_total = sum(window_counts.values())
+    # Only what survives the gate. The raw number the boards handed over is a
+    # measure of their output, not of anything the candidate can act on - it
+    # ran into four figures while barely a dozen were worth opening.
+    window_total = window_counts.get("passed", 0)
 
     all_awaiting = conn.execute(
         "SELECT COUNT(*) AS n FROM job LEFT JOIN application"
@@ -679,8 +696,8 @@ def dashboard(conn, hours=168, limits=None):
         "last_run": dict(last_run) if last_run else None,
         "cards": [
             {"key": "New postings", "value": window_total, "tone": None,
-             "sub": ("posted in the last " + period) if window_total
-             else "nothing posted in the last " + period},
+             "sub": ("matched in the last " + period) if window_total
+             else "nothing matched in the last " + period},
             {"key": "Worth a look", "value": all_passed, "tone": "mint",
              "sub": "in Jobs right now" if all_passed else "nothing worth a look yet"},
             {"key": "Not rated yet", "value": all_awaiting, "tone": "amber",

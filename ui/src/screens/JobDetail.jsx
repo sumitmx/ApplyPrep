@@ -23,9 +23,6 @@ export default function JobDetail() {
   const [estimateError, setEstimateError] = useState(null)
   const [tracking, setTracking] = useState(false)
   const [showChat, setShowChat] = useState(false)
-  const [openedPosting, setOpenedPosting] = useState(
-    () => localStorage.getItem('opened_posting_' + id) === '1'
-  )
 
   const load = () => {
     setJob(null)
@@ -36,9 +33,6 @@ export default function JobDetail() {
     api.documents(id).then(setDocs).catch(() => setDocs(null))
   }
   useEffect(() => { load() }, [id])
-  useEffect(() => {
-    setOpenedPosting(localStorage.getItem('opened_posting_' + id) === '1')
-  }, [id])
 
   const toggleSkills = async () => {
     if (!showSkills && !allSkills) {
@@ -155,10 +149,6 @@ export default function JobDetail() {
               href={job.url}
               target="_blank"
               rel="noreferrer"
-              onClick={() => {
-                localStorage.setItem('opened_posting_' + id, '1')
-                setOpenedPosting(true)
-              }}
             >
               Open posting
             </a>
@@ -170,17 +160,7 @@ export default function JobDetail() {
         <button className="btn" onClick={rate} disabled={rating}>
           {rating ? 'Rating...' : (job.scored ? 'Rate again' : 'Rate now')}
         </button>
-        {job.url && !openedPosting ? (
-          <button
-            className="btn pri"
-            disabled
-            title="Open the posting at least once before tailoring your CV"
-          >
-            Tailor my CV
-          </button>
-        ) : (
-          <Link className="btn pri" to={'/jobs/' + job.id + '/tailor'}>Tailor my CV</Link>
-        )}
+        <Link className="btn pri" to={'/jobs/' + job.id + '/tailor'}>Tailor my CV</Link>
         <Link className="btn" to={'/jobs/' + job.id + '/letter'}>Write cover letter</Link>
         <button
           className={'btn' + (job.status === 'shortlisted' ? ' pri' : '')}

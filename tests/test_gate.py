@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from jobagent.gate import evaluate
+from jobagent.gate import evaluate, years_required
 
 CFG = {
     "title_must_match": ["architect", "automation"],
@@ -201,3 +201,69 @@ def test_zero_max_age_still_rejects_stale():
     status, reason = evaluate(job, cfg)
     assert status == "rejected"
     assert "stale" in reason
+
+
+# ── seniority ──────────────────────────────────────────────────────────────
+
+SENIOR_CFG = dict(CFG, min_years_experience=5)
+
+
+def _job(description):
+    return {
+        "title": "Automation Architect",
+        "sponsorship_status": "unknown",
+        "description": description,
+    }
+
+
+def test_years_required_reads_common_phrasings():
+    assert years_required("You have 3+ years of experience in Python") == 3
+    assert years_required("Minimum 5 years experience required") == 5
+    assert years_required("At least 8 years in a similar role") == 8
+    assert years_required("3-5 years of professional experience") == 3
+    assert years_required("3 to 5 years of experience") == 3
+    assert years_required("10+ yrs of hands-on experience") == 10
+
+
+def test_years_required_reads_german():
+    assert years_required("Mindestens 4 Jahre Berufserfahrung") == 4
+    assert years_required("5 Jahre Erfahrung in der Softwareentwicklung") == 5
+    assert years_required("Du bringst 2-5 Jahre Berufserfahrung mit") == 2
+
+
+def test_years_required_takes_the_largest_requirement():
+    text = "8+ years of experience overall, plus 2+ years of experience with Kubernetes"
+    assert years_required(text) == 8
+
+
+def test_years_required_ignores_years_that_are_not_a_requirement():
+    assert years_required("Our company was founded 10 years ago") is None
+    assert years_required("We ship a new release every 2 years") is None
+    assert years_required("A senior architect role with broad ownership") is None
+    assert years_required("") is None
+    assert years_required(None) is None
+
+
+def test_rejects_role_below_the_experience_floor():
+    status, reason = evaluate(_job("We want 3+ years of experience in Python."), SENIOR_CFG)
+    assert status == "rejected"
+    assert "only 3 years of experience" in reason
+
+
+def test_reason_reads_naturally_for_a_single_year():
+    assert "only 1 year of experience" in evaluate(_job("1+ years of experience."), SENIOR_CFG)[1]
+
+
+def test_keeps_role_at_or_above_the_floor():
+    assert evaluate(_job("8+ years of experience required."), SENIOR_CFG)[0] == "passed"
+    assert evaluate(_job("5 years of experience required."), SENIOR_CFG)[0] == "passed"
+
+
+def test_silent_posting_is_never_treated_as_junior():
+    """Most postings never state a number; guessing would drop good roles."""
+    assert evaluate(_job("Own our automation platform end to end."), SENIOR_CFG)[0] == "passed"
+    assert evaluate(_job(None), SENIOR_CFG)[0] == "passed"
+
+
+def test_floor_is_off_when_unset():
+    assert evaluate(_job("1+ years of experience."), CFG)[0] == "passed"

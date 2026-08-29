@@ -8,6 +8,7 @@ import JobDetail from './screens/JobDetail'
 import Jobs from './screens/Jobs'
 import Letter from './screens/Letter'
 import Profile from './screens/Profile'
+import Search from './screens/Search'
 import Tailor from './screens/Tailor'
 
 const I = {
@@ -99,7 +100,7 @@ function GlobalSearch() {
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
   const [open, setOpen] = useState(false)
-  const [cursor, setCursor] = useState(0)
+  const [cursor, setCursor] = useState(-1)
   const box = useRef(null)
   const navigate = useNavigate()
 
@@ -109,7 +110,7 @@ function GlobalSearch() {
     let cancelled = false
     const timer = setTimeout(() => {
       api.search(term)
-        .then((d) => { if (!cancelled) { setResults(d.results); setCursor(0) } })
+        .then((d) => { if (!cancelled) { setResults(d.results); setCursor(-1) } })
         .catch(() => { if (!cancelled) setResults([]) })
     }, 180)
     return () => { cancelled = true; clearTimeout(timer) }
@@ -137,12 +138,26 @@ function GlobalSearch() {
     navigate('/jobs/' + id)
   }
 
+  // Enter with nothing highlighted opens the full results page; arrowing to a
+  // specific suggestion first and then Enter jumps straight to that job.
+  const goList = () => {
+    const term = q.trim()
+    if (term.length < 2) return
+    setOpen(false)
+    navigate('/search?q=' + encodeURIComponent(term))
+  }
+
   const onKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (cursor >= 0 && results[cursor]) go(results[cursor].id)
+      else goList()
+      return
+    }
+    if (e.key === 'Escape') { setOpen(false); return }
     if (!results.length) return
     if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => (c + 1) % results.length) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => (c - 1 + results.length) % results.length) }
-    else if (e.key === 'Enter') { e.preventDefault(); go(results[cursor].id) }
-    else if (e.key === 'Escape') { setOpen(false) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => (c <= 0 ? results.length - 1 : c - 1)) }
   }
 
   const showing = open && q.trim().length >= 2
@@ -168,21 +183,32 @@ function GlobalSearch() {
         <div className="searchdrop">
           {results.length === 0 ? (
             <div className="searchempty">Nothing matches “{q.trim()}”.</div>
-          ) : results.map((r, i) => (
-            <button
-              key={r.id}
-              className={'searchrow' + (i === cursor ? ' on' : '')}
-              onMouseEnter={() => setCursor(i)}
-              onClick={() => go(r.id)}
-            >
-              <span className="t">{r.title}</span>
-              <span className="m">
-                {[r.company, r.location, r.posted_age].filter(Boolean).join(' · ')}
-              </span>
-              {r.applied && <span className="pill p-rust">applied</span>}
-              {!r.applied && r.status && <span className="pill p-slate">{r.status}</span>}
-            </button>
-          ))}
+          ) : (
+            <>
+              {results.map((r, i) => (
+                <button
+                  key={r.id}
+                  className={'searchrow' + (i === cursor ? ' on' : '')}
+                  onMouseEnter={() => setCursor(i)}
+                  onClick={() => go(r.id)}
+                >
+                  <span className="t">{r.title}</span>
+                  <span className="m">
+                    {[r.company, r.location, r.posted_age].filter(Boolean).join(' · ')}
+                  </span>
+                  {r.applied && <span className="pill p-rust">applied</span>}
+                  {!r.applied && r.status && <span className="pill p-slate">{r.status}</span>}
+                </button>
+              ))}
+              <button
+                className="searchall"
+                onMouseEnter={() => setCursor(-1)}
+                onClick={goList}
+              >
+                See all results for “{q.trim()}”
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -343,6 +369,7 @@ export default function App() {
             <Route path="/jobs/:id/letter" element={<Letter />} />
             <Route path="/applications" element={<Applications />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/search" element={<Search />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>

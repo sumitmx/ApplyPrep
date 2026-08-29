@@ -12,33 +12,115 @@ DEFAULT_PROVIDER = "claude"
 
 _FENCE = re.compile(r"^```[a-zA-Z]*\n(.*)\n```$", re.DOTALL)
 
+_CLAUDE_SETUP = {
+    "setup_hint": "Install Claude Code and sign in, then this works on your "
+                  "existing subscription with no API key.",
+    "install_steps": [
+        "Open a terminal.",
+        "Run: npm install -g @anthropic-ai/claude-code",
+        "Run: claude",
+        "Type /login and finish signing in in the browser.",
+    ],
+    "signin_steps": [
+        "Open a terminal.",
+        "Run: claude",
+        "Type /login and finish signing in in the browser.",
+        "Come back here and press Check again.",
+    ],
+    "signin_command": "claude",
+}
+
+_CODEX_SETUP = {
+    "setup_hint": "Install the Codex CLI (npm install -g @openai/codex) and run "
+                  "codex login, then this works on your ChatGPT plan with no "
+                  "API key.",
+    "install_steps": [
+        "Open a terminal.",
+        "Run: npm install -g @openai/codex",
+        "Run: codex login",
+        "Finish signing in in the browser.",
+    ],
+    "signin_steps": [
+        "Open a terminal.",
+        "Run: codex login",
+        "Finish signing in in the browser.",
+        "Come back here and press Check again.",
+    ],
+    "signin_command": "codex login",
+}
+
 PROVIDERS = {
-    "claude": {
-        "label": "Claude (Sonnet)",
-        "command": "claude",
-        "model": "claude-sonnet-5",
-        "setup_hint": "Install Claude Code and sign in, then this works on your "
-                       "existing subscription with no API key.",
-    },
-    "claude-opus5": {
-        "label": "Claude (Opus 5)",
-        "command": "claude",
-        "model": "claude-opus-5",
-        "setup_hint": "Install Claude Code and sign in, then this works on your "
-                       "existing subscription with no API key.",
-    },
-    "openai": {
-        "label": "ChatGPT",
-        "command": "codex",
-        "setup_hint": "Install the Codex CLI (npm install -g @openai/codex) and run "
-                       "codex login, then this works on your ChatGPT plan with no "
-                       "API key.",
-    },
+    "claude": dict(_CLAUDE_SETUP, label="Claude (Sonnet)", command="claude",
+                   model="claude-sonnet-5"),
+    "claude-opus5": dict(_CLAUDE_SETUP, label="Claude (Opus 5)", command="claude",
+                         model="claude-opus-5"),
+    "openai": dict(_CODEX_SETUP, label="ChatGPT", command="codex"),
 }
 
 
 class AgentError(Exception):
     pass
+
+
+# The CLIs all fail the same two recoverable ways - not installed, or installed
+# but not signed in - and both are things the candidate can fix in a minute.
+# Telling them apart here is what lets the app offer the fix instead of showing
+# a raw "exited with code 1".
+_AUTH_SIGNS = re.compile(
+    r"not logged in|/login\b|\blog ?in\b|\bsign ?in\b|unauthori[sz]ed"
+    r"|authentication|auth[ _]?error|invalid api key|missing api key"
+    r"|oauth|token (?:has )?expired|session (?:has )?expired|\b401\b|\b403\b",
+    re.IGNORECASE,
+)
+
+# Running out of credit or hitting a rate limit also fails the call, and the
+# wording overlaps ("quota", "limit"), but signing in again fixes none of it -
+# so those are deliberately not treated as an auth problem.
+_NOT_AUTH_SIGNS = re.compile(
+    r"credit balance|out of credit|quota|rate limit|usage limit|billing|overloaded",
+    re.IGNORECASE,
+)
+
+
+def looks_like_auth_failure(text):
+    text = text or ""
+    if _NOT_AUTH_SIGNS.search(text):
+        return False
+    return bool(_AUTH_SIGNS.search(text))
+
+
+def help_payload(kind, provider, reason=None):
+    """Everything the UI needs to walk the candidate through fixing this."""
+    info = _provider_info(provider)
+    label = info["label"]
+    if kind == "missing":
+        message = ("The " + info["command"] + " command was not found, so "
+                   + label + " cannot be reached.")
+        steps = info["install_steps"]
+    else:
+        message = "You are not signed in to " + label + "."
+        steps = info["signin_steps"]
+    return {
+        "kind": kind,
+        "provider": provider,
+        "label": label,
+        "command": info["command"],
+        "signin_command": info["signin_command"],
+        "message": message,
+        "steps": list(steps),
+        "hint": info["setup_hint"],
+        "reason": reason,
+    }
+
+
+class AgentSetupError(AgentError):
+    """The CLI is missing or not signed in - recoverable, with steps attached."""
+
+    def __init__(self, kind, provider, reason=None):
+        self.payload = help_payload(kind, provider, reason)
+        self.kind = kind
+        self.provider = provider
+        super().__init__(self.payload["message"])
 
 
 def _provider_info(provider):
@@ -178,13 +260,30 @@ def run(prompt, timeout=DEFAULT_TIMEOUT, provider=DEFAULT_PROVIDER):
     info = _provider_info(provider)
     exe = executable(provider)
     if not exe:
-        raise AgentError(
-            "The " + info["command"] + " command was not found. " + info["setup_hint"]
-        )
+        raise AgentSetupError("missing", provider)
     runner = _RUNNERS[info["command"]]
-    if info.get("model"):
-        return runner(exe, prompt, timeout, model=info["model"])
-    return runner(exe, prompt, timeout)
+    try:
+        if info.get("model"):
+            return runner(exe, prompt, timeout, model=info["model"])
+        return runner(exe, prompt, timeout)
+    except AgentSetupError:
+        raise
+    except AgentError as exc:
+        # The runners report whatever the CLI printed. A sign-in failure hides in
+        # there as ordinary text, so it is promoted to something the UI can act on.
+        if looks_like_auth_failure(str(exc)):
+            raise AgentSetupError("auth", provider, reason=str(exc)) from exc
+        raise
+
+
+def probe(provider=DEFAULT_PROVIDER, timeout=90):
+    """Smallest possible real call, used by the "check again" button.
+
+    There is no way to ask either CLI "am I signed in?" without talking to it,
+    so this asks for one word and throws away the answer.
+    """
+    run("Reply with the single word: ok", timeout, provider)
+    return True
 
 
 def run_json(prompt, timeout=DEFAULT_TIMEOUT, provider=DEFAULT_PROVIDER):

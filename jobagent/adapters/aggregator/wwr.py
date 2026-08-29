@@ -1,7 +1,8 @@
+import concurrent.futures
 from xml.etree import ElementTree
 
 from ...normalize import region_allows, within_days
-from ..base import Adapter, get_text, pause
+from ..base import Adapter, get_text
 
 FEEDS = [
     "https://weworkremotely.com/categories/remote-programming-jobs.rss",
@@ -9,6 +10,18 @@ FEEDS = [
     "https://weworkremotely.com/categories/remote-product-jobs.rss",
     "https://weworkremotely.com/categories/remote-management-and-finance-jobs.rss",
 ]
+
+
+def _settle(call, arg):
+    """Run one fetch and hand back (rows, error) instead of raising.
+
+    A pool worker that raises would lose every other feed's result, and one
+    dead category is not a reason to lose the other three.
+    """
+    try:
+        return call(arg), None
+    except Exception as exc:
+        return [], type(exc).__name__
 
 
 def parse_feed(body):
@@ -32,17 +45,25 @@ class WeWorkRemotely(Adapter):
         settings = cfg or {}
         feeds = settings.get("feeds") or FEEDS
         filter_region = settings.get("region_filter", True)
-        gap = settings.get("pause_seconds", 0.5)
 
         seen = set()
         out = []
         self.errors = {}
-        for index, feed in enumerate(feeds):
-            try:
-                body = get_text(feed, timeout=30)
-                rows = parse_feed(body)
-            except Exception as exc:
-                self.errors[feed] = type(exc).__name__
+
+        # The four category feeds have nothing to do with each other, so there
+        # is no reason to wait for one before asking for the next. Results are
+        # still walked in feed order below, so de-duplication stays predictable.
+        def load(feed):
+            return parse_feed(get_text(feed, timeout=30))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(feeds)) as pool:
+            fetched = list(zip(feeds, pool.map(
+                lambda f: _settle(load, f), feeds
+            )))
+
+        for feed, (rows, error) in fetched:
+            if error is not None:
+                self.errors[feed] = error
                 continue
             for row in rows:
                 link = row.get("link") or row.get("guid")
@@ -54,6 +75,4 @@ class WeWorkRemotely(Adapter):
                     continue
                 seen.add(link)
                 out.append({"external_id": row.get("guid") or link, "url": link, "payload": row})
-            if index + 1 < len(feeds):
-                pause(gap)
         return out

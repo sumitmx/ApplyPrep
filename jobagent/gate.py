@@ -41,6 +41,58 @@ def age_days(posted_at):
     return (datetime.now(timezone.utc) - dt).days
 
 
+# ── seniority ──────────────────────────────────────────────────────────────
+# The boards hand over everything recent, and a title rarely says what level a
+# role is: "Software Engineer" is used for a first job and for a fifteen-year
+# one. The requirement almost always sits in the description instead, so that
+# is where this looks.
+
+# A number followed by a years unit. A range - "3-5 years", "3 bis 5 Jahre" -
+# contributes its lower bound, since that is the actual requirement.
+_YEARS_RE = re.compile(
+    r"(?<![\w.,])(\d{1,2})\s*"
+    r"(?:\+|plus)?\s*"
+    r"(?:(?:-|–|—|to|bis)\s*\d{1,2}\s*\+?\s*)?"
+    r"\+?\s*"
+    r"(?:years?|yrs?|jahren?|jahr)(?!\w)",
+    re.IGNORECASE,
+)
+
+# A bare "10 years" could be anything - how long the company has existed, how
+# long the product has shipped. It only counts as a requirement when one of
+# these sits near it, so a year count with no experience framing is ignored.
+_EXPERIENCE_CONTEXT = re.compile(
+    r"experien|erfahrung|praxis|hands[\s\-]?on|background|track record"
+    r"|seniorit|at least|minimum|mindestens|min\.",
+    re.IGNORECASE,
+)
+
+_CONTEXT_WINDOW = 90
+
+
+def years_required(text):
+    """The most years of experience a posting asks for, or None if it never says.
+
+    Every stated requirement is collected and the largest wins: a posting
+    wanting "8+ years overall, 2+ years with Kubernetes" is an eight-year role,
+    not a two-year one. Nothing is inferred - a posting that never states a
+    number returns None and is left for the other checks to judge.
+    """
+    if not text:
+        return None
+    best = None
+    for match in _YEARS_RE.finditer(text):
+        window = text[max(0, match.start() - _CONTEXT_WINDOW):match.end() + _CONTEXT_WINDOW]
+        if not _EXPERIENCE_CONTEXT.search(window):
+            continue
+        years = int(match.group(1))
+        if years > 40:
+            continue
+        if best is None or years > best:
+            best = years
+    return best
+
+
 def _skill_overlap_count(job, master):
     tiers = profile.match_skills(master, job.get("title", "") + "\n" + (job.get("description") or ""))
     return len(tiers.get("core") or []) + len(tiers.get("working") or [])
@@ -73,6 +125,15 @@ def evaluate(job, gate_cfg, master=None):
             if bypass and not matched:
                 return "rejected", "sponsors visas, but title and skills did not match your profile"
             return "rejected", "title matched " + str(matched) + " but not enough matching skills"
+
+    # Seniority, from the description. Only an explicit number can reject: a
+    # posting that never states one is left alone rather than guessed at.
+    floor = gate_cfg.get("min_years_experience")
+    if floor:
+        wanted = years_required(job.get("description"))
+        if wanted is not None and wanted < floor:
+            unit = " year" if wanted == 1 else " years"
+            return "rejected", "asks for only " + str(wanted) + unit + " of experience"
 
     max_age = gate_cfg.get("max_age_days")
     age = age_days(job.get("posted_at"))

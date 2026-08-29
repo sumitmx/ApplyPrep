@@ -99,3 +99,44 @@ def test_dependent_score_and_reach_rows_are_cleaned_up(conn):
     result = pull.prune(conn, days=7, apply=True)
     assert result["removed"] == 1
     assert conn.execute("SELECT 1 FROM score WHERE job_id = ?", (old_scored,)).fetchone() is None
+
+
+def _empty_pull_cfg(max_age_days):
+    """A cfg that pulls nothing (no enabled sources) so run() does no network
+    work - only its bookkeeping and the automatic prune afterwards."""
+    return {
+        "countries": ["DE"],
+        "since_days": 7,
+        "sources": {},
+        "gate": {"max_age_days": max_age_days},
+    }
+
+
+def _stub_pull_inputs(monkeypatch):
+    """Keep run() off the filesystem: no profile, master or watchlist files."""
+    monkeypatch.setattr(pull, "load_profile", lambda cfg: {})
+    monkeypatch.setattr(pull, "sync_watchlist", lambda conn, cfg: [])
+    monkeypatch.setattr(pull.profile_module, "load_master", lambda path: None)
+
+
+def test_pull_prunes_aged_jobs_within_the_gate_window(conn, monkeypatch):
+    _stub_pull_inputs(monkeypatch)
+    old_untouched = _job(conn, "old1", OLD)
+    _job(conn, "recent1", RECENT)
+
+    result = pull.run(conn, _empty_pull_cfg(7))
+
+    assert result["pruned"]["removed"] == 1
+    remaining = {r["dedup_key"] for r in conn.execute("SELECT dedup_key FROM job")}
+    assert remaining == {"recent1"}
+    assert conn.execute("SELECT 1 FROM job WHERE id = ?", (old_untouched,)).fetchone() is None
+
+
+def test_pull_leaves_everything_when_max_age_is_null(conn, monkeypatch):
+    _stub_pull_inputs(monkeypatch)
+    _job(conn, "old1", OLD)
+
+    result = pull.run(conn, _empty_pull_cfg(None))
+
+    assert "pruned" not in result
+    assert conn.execute("SELECT COUNT(*) AS n FROM job").fetchone()["n"] == 1

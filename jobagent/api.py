@@ -80,15 +80,24 @@ def create_app(cfg=None):
     def master():
         return profile.load_master(cfg.get("master_path", "master.yaml"))
 
+    def _agent_http(exc):
+        """Turn an agent failure into a response the UI can act on.
+
+        A missing CLI and a signed-out one are both the candidate's to fix, so
+        both carry the repair steps as a structured body and the UI opens its
+        sign-in dialog off the payload's `kind`. The status codes stay honest
+        about which it is: nothing installed to talk to is 503, installed but
+        not signed in is 401. Anything else is a real upstream failure, 502.
+        """
+        if isinstance(exc, agent.AgentSetupError):
+            status = 503 if exc.kind == "missing" else 401
+            return HTTPException(status_code=status, detail=exc.payload)
+        return HTTPException(status_code=502, detail=str(exc))
+
     def _require_agent(conn):
         provider = service.get_ai_provider(conn)
         if not agent.available(provider):
-            info = agent.PROVIDERS[provider]
-            raise HTTPException(
-                status_code=503,
-                detail="The " + info["command"] + " command was not found. "
-                       + info["setup_hint"],
-            )
+            raise _agent_http(agent.AgentSetupError("missing", provider))
 
     @app.get("/api/settings")
     def get_settings():
@@ -97,6 +106,29 @@ def create_app(cfg=None):
             return service.ai_providers(conn)
         finally:
             conn.close()
+
+    @app.get("/api/agent/check")
+    def get_agent_check():
+        """Is the current provider actually usable right now?
+
+        Backs the "check again" button in the sign-in dialog. It costs one tiny
+        real call because neither CLI can be asked whether it is signed in
+        without talking to it. Never raises - the failure *is* the answer.
+        """
+        conn = db()
+        try:
+            provider = service.get_ai_provider(conn)
+        finally:
+            conn.close()
+        try:
+            agent.probe(provider)
+            return {"ok": True, "provider": provider,
+                    "label": agent.PROVIDERS[provider]["label"]}
+        except agent.AgentSetupError as exc:
+            return dict(exc.payload, ok=False)
+        except agent.AgentError as exc:
+            return {"ok": False, "kind": "other", "provider": provider,
+                    "message": str(exc)}
 
     @app.post("/api/settings")
     def post_settings(body: SettingsBody):
@@ -131,7 +163,7 @@ def create_app(cfg=None):
                  hours: int | None = None, remote: str | None = None,
                  agency: bool | None = None, source: str | None = None,
                  band: str | None = None, applied: bool | None = None,
-                 draft_cv: bool | None = None,
+                 draft_cv: bool | None = None, sort: str | None = None,
                  limit: int = 50, offset: int = 0):
         conn = db()
         try:
@@ -139,6 +171,7 @@ def create_app(cfg=None):
                                 status=status, hours=hours, remote=remote,
                                 agency=agency, source=source, band=band,
                                 applied=applied, draft_cv=draft_cv,
+                                sort=sort or "best",
                                 limit=min(limit, 200), offset=offset,
                                 limits=service.band_limits(cfg))
         finally:
@@ -201,7 +234,7 @@ def create_app(cfg=None):
         except HTTPException:
             raise
         except agent.AgentError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise _agent_http(exc)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -236,7 +269,7 @@ def create_app(cfg=None):
         except service.NotRatedError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         except agent.AgentError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise _agent_http(exc)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -267,7 +300,7 @@ def create_app(cfg=None):
         except HTTPException:
             raise
         except agent.AgentError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise _agent_http(exc)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -446,7 +479,7 @@ def create_app(cfg=None):
         except HTTPException:
             raise
         except agent.AgentError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise _agent_http(exc)
         finally:
             conn.close()
         return {"skills": skills}
@@ -496,7 +529,7 @@ def create_app(cfg=None):
         except HTTPException:
             raise
         except agent.AgentError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise _agent_http(exc)
         finally:
             conn.close()
 
@@ -559,7 +592,7 @@ def create_app(cfg=None):
         except documents.FabricationError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except agent.AgentError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise _agent_http(exc)
         finally:
             conn.close()
         if result is None:
@@ -660,7 +693,7 @@ def create_app(cfg=None):
         except service.NoTailoredCvError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         except agent.AgentError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            raise _agent_http(exc)
         finally:
             conn.close()
         if result is None:

@@ -324,3 +324,93 @@ def test_watchlist_loads_and_groups(tmp_path):
 
 def test_watchlist_missing_file_is_empty(tmp_path):
     assert watchlist.load(str(tmp_path / "nope.yaml")) == []
+
+
+# ── concurrent fetching ────────────────────────────────────────────────────
+# Sources are fetched together so a run costs as long as its slowest source
+# rather than the sum of them. What matters is that going wide did not make
+# failures contagious, and that one hung board cannot hold the run open.
+
+import time
+
+from jobagent import pull
+from jobagent.adapters.ats.board import BoardAdapter
+
+
+class _Slow:
+    kind = "aggregator"
+
+    def __init__(self, seconds, rows):
+        self.seconds, self.rows = seconds, rows
+
+    def fetch(self, cfg, countries, since_days):
+        time.sleep(self.seconds)
+        return self.rows
+
+
+class _Broken:
+    kind = "aggregator"
+
+    def fetch(self, cfg, countries, since_days):
+        raise RuntimeError("board is down")
+
+
+def test_sources_are_fetched_at_the_same_time():
+    """Four sources that each take a moment must not cost four moments."""
+    adapters = [(str(i), _Slow(0.4, [{"id": i}]), {}) for i in range(4)]
+    started = time.time()
+    results = pull.fetch_all(adapters, ["DE"], 7)
+    elapsed = time.time() - started
+
+    assert len(results) == 4
+    assert all(error is None for _, error in results.values())
+    assert elapsed < 1.2, "sources look like they ran one after another"
+
+
+def test_one_broken_source_does_not_lose_the_others():
+    adapters = [
+        ("good", _Slow(0, [{"id": 1}]), {}),
+        ("bad", _Broken(), {}),
+    ]
+    results = pull.fetch_all(adapters, ["DE"], 7)
+
+    assert results["good"] == ([{"id": 1}], None)
+    postings, error = results["bad"]
+    assert postings == []
+    assert "board is down" in error
+
+
+class _HangingBoard(BoardAdapter):
+    """One company answers, the other never does."""
+
+    name = "hanging"
+
+    def url_for(self, token):
+        return "https://example.test/" + token
+
+    def rows(self, data):
+        return data
+
+    def item(self, row, company):
+        return {"external_id": row["id"], "url": "https://example.test/j", "payload": row}
+
+
+def test_a_hung_board_cannot_hold_the_run_open(monkeypatch):
+    def fake_get_json(url, timeout=20, retries=2, headers=None):
+        if url.endswith("slow"):
+            time.sleep(30)
+        return [{"id": "1"}]
+
+    monkeypatch.setattr("jobagent.adapters.ats.board.get_json", fake_get_json)
+    adapter = _HangingBoard([
+        {"name": "Quick", "token": "quick"},
+        {"name": "Stuck", "token": "slow"},
+    ])
+
+    started = time.time()
+    out = adapter.fetch({"region_filter": False, "deadline_seconds": 0.5}, ["DE"], 7)
+    elapsed = time.time() - started
+
+    assert elapsed < 5, "the deadline did not cut the hung company loose"
+    assert len(out) == 1, "the company that did answer should still count"
+    assert adapter.errors == {"Stuck": "TooSlow"}

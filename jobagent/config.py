@@ -35,6 +35,7 @@ DEFAULTS = {
         "require_english_only": False,
         "allow_contract": True,
         "max_age_days": 45,
+        "min_years_experience": None,
         "title_must_match": [
             "architect",
             "automation",

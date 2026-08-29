@@ -260,8 +260,160 @@ export function Loading() {
   return <div className="empty">Loading...</div>
 }
 
-export function ErrorBox({ error }) {
+// The CLIs fail two ways the candidate can actually fix - not installed, or
+// installed but signed out. The API marks those with a `kind`, so anywhere an
+// error surfaces we can offer the fix rather than print "exited with code 1".
+export function isSetupError(error) {
+  return !!error && (error.kind === 'auth' || error.kind === 'missing')
+}
+
+function Step({ text }) {
+  const run = text.match(/^Run:\s*(.+)$/)
+  if (!run) return <li>{text}</li>
+  return (
+    <li>
+      Run <code className="cmd">{run[1]}</code>
+      <button
+        className="copybtn"
+        type="button"
+        onClick={() => navigator.clipboard && navigator.clipboard.writeText(run[1])}
+      >
+        copy
+      </button>
+    </li>
+  )
+}
+
+export function AgentSetupModal({ info, onClose, onFixed }) {
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState(null)
+  const [settings, setSettings] = useState(null)
+  const [switching, setSwitching] = useState('')
+
+  useEffect(() => {
+    api.getSettings().then(setSettings).catch(() => {})
+  }, [])
+
+  const check = async () => {
+    setChecking(true)
+    setResult(null)
+    try {
+      const res = await api.agentCheck()
+      setResult(res)
+      if (res.ok && onFixed) onFixed()
+    } catch (e) {
+      setResult({ ok: false, message: String(e.message || e) })
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const switchTo = async (key) => {
+    setSwitching(key)
+    try {
+      setSettings(await api.setAiProvider(key))
+      setResult(null)
+      if (onFixed) onFixed()
+    } catch (e) {
+      setResult({ ok: false, message: String(e.message || e) })
+    } finally {
+      setSwitching('')
+    }
+  }
+
+  const others = settings
+    ? settings.options.filter((o) => o.key !== info.provider && o.available)
+    : []
+
+  return (
+    <div className="modalbackdrop" onClick={onClose}>
+      <div className="modalcard" onClick={(e) => e.stopPropagation()}>
+        <div className="chathead">
+          <div>
+            <b>{info.kind === 'missing' ? 'Set up ' : 'Sign in to '}{info.label}</b>
+            <div className="muted" style={{ fontSize: 12 }}>{info.message}</div>
+          </div>
+          <button className="chatx" type="button" onClick={onClose} aria-label="Close">x</button>
+        </div>
+
+        <div className="modalbody">
+          <ol className="setupsteps">
+            {(info.steps || []).map((text, i) => <Step key={i} text={text} />)}
+          </ol>
+
+          {info.hint && <p className="muted" style={{ fontSize: 12 }}>{info.hint}</p>}
+
+          {result && (
+            <div className={result.ok ? 'ok' : 'err'}>
+              {result.ok
+                ? 'Signed in. ' + (result.label || info.label) + ' is working again.'
+                : (result.message || 'Still not signed in.')}
+            </div>
+          )}
+
+          {others.length > 0 && (
+            <div className="setupalt">
+              <div className="muted" style={{ fontSize: 12 }}>
+                Or use a different model that is already set up:
+              </div>
+              <div className="setupaltrow">
+                {others.map((o) => (
+                  <button
+                    key={o.key}
+                    className="btn"
+                    type="button"
+                    disabled={!!switching}
+                    onClick={() => switchTo(o.key)}
+                  >
+                    {switching === o.key ? 'Switching...' : 'Use ' + o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {info.reason && (
+            <details className="setupraw">
+              <summary>What the command actually said</summary>
+              <pre>{info.reason}</pre>
+            </details>
+          )}
+        </div>
+
+        <div className="modalfoot">
+          <button className="btn" type="button" onClick={onClose}>Close</button>
+          <button className="btn pri" type="button" onClick={check} disabled={checking}>
+            {checking ? 'Checking...' : 'Check again'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function ErrorBox({ error, onFixed }) {
+  const [dismissed, setDismissed] = useState(false)
+  useEffect(() => { setDismissed(false) }, [error])
   if (!error) return null
+  if (isSetupError(error)) {
+    return (
+      <>
+        <div className="err">
+          {String(error.message || error)}{' '}
+          <button className="errlink" type="button" onClick={() => setDismissed(false)}>
+            Fix this
+          </button>
+        </div>
+        {!dismissed && (
+          <AgentSetupModal
+            info={error}
+            onClose={() => setDismissed(true)}
+            onFixed={onFixed}
+          />
+        )}
+      </>
+    )
+  }
   return <div className="err">{String(error.message || error)}</div>
 }
 

@@ -12,11 +12,21 @@ const GATES = [
   ['', 'everything'],
 ]
 
+// Capped at 7 days on purpose: nothing older than a week should ever show in
+// the list. The gate and the pull window enforce the same 7-day cut-off.
 const WINDOWS = [
   ['48', 'listed in 48 hours'],
   ['24', 'listed in 24 hours'],
   ['168', 'listed in 7 days'],
-  ['', 'any time'],
+]
+
+// Newest first is the default: the list is a feed of what has just appeared,
+// and a fresh posting is worth more than a marginally better-ranked stale one.
+// "Best match" is still there for when you want the band grouping instead.
+const SORTS = [
+  ['new', 'newest first'],
+  ['best', 'best match first'],
+  ['old', 'oldest first'],
 ]
 
 const MODES = [
@@ -111,6 +121,7 @@ export default function Jobs() {
 
   const gate = params.get('gate') ?? 'passed'
   const hours = params.get('hours') ?? '48'
+  const sort = params.get('sort') ?? 'new'
   const country = params.get('country') ?? ''
   const minFit = params.get('min_fit') ?? ''
   const remote = params.get('remote') ?? ''
@@ -143,6 +154,7 @@ export default function Jobs() {
         source,
         band: onlyUnrated ? 'unrated' : band,
         draft_cv: draftCv,
+        sort,
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
       })
@@ -150,8 +162,8 @@ export default function Jobs() {
       .catch(setError)
   }
 
-  useEffect(() => { load() }, [gate, hours, country, minFit, remote, agency, source, band, draftCv, page])
-  useEffect(() => { setSelected(new Set()) }, [gate, hours, country, minFit, remote, agency, source, band, draftCv, page])
+  useEffect(() => { load() }, [gate, hours, sort, country, minFit, remote, agency, source, band, draftCv, page])
+  useEffect(() => { setSelected(new Set()) }, [gate, hours, sort, country, minFit, remote, agency, source, band, draftCv, page])
 
   const set = (key, value) => {
     const next = new URLSearchParams(params)
@@ -244,6 +256,96 @@ export default function Jobs() {
     })
   }
 
+  // One job row, shared by the band-grouped view and the flat date-sorted feed.
+  const renderJob = (job) => (
+    <div className={'jobwrap' + (job.saved ? ' saved' : '')} key={job.id}>
+      {job.requirements && (
+        <div
+          className="preview"
+          style={{ display: previewJob === job.id ? 'block' : 'none' }}
+          onMouseEnter={() => openPreview(job.id)}
+          onMouseLeave={scheduleClosePreview}
+        >
+          <b>{job.title}</b>
+          {!job.requirements_found && (
+            <em className="fallback-note">
+              No separate requirements heading was found, showing the
+              full posting instead.
+            </em>
+          )}
+          {job.requirements}
+        </div>
+      )}
+      <input
+        type="checkbox"
+        checked={selected.has(job.id)}
+        onChange={() => toggleSelected(job.id)}
+        disabled={!!rating}
+        style={{ marginLeft: 16, flexShrink: 0 }}
+        aria-label={'Select ' + job.title}
+      />
+      <Link className="job" to={'/jobs/' + job.id}>
+        <div className="body">
+          <div
+            className="t"
+            onMouseEnter={() => openPreview(job.id)}
+            onMouseLeave={scheduleClosePreview}
+          >
+            {job.title}
+            {job.websites && job.websites[0] && (
+              <span className="pill p-slate" style={{ marginLeft: 8 }}>
+                {job.websites[0]}
+              </span>
+            )}
+          </div>
+          <div className="c">
+            {[job.company, [job.city, job.country].filter(Boolean).join(', '),
+              ageLabel(job)].filter(Boolean).join(' · ')}
+          </div>
+          <div className="tags">
+            {job.saved && <Pill tone="pine">saved</Pill>}
+            {job.badges.map((b, i) => (
+              <Pill key={i} tone={b.tone} strong={b.strong}>{b.text}</Pill>
+            ))}
+          </div>
+        </div>
+      </Link>
+      {job.url && (
+        <a
+          className="btn sm"
+          href={job.url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+        >
+          Open posting
+        </a>
+      )}
+      <div className="scores">
+        <Score value={job.scores.fit} label="match" />
+        <Score value={job.scores.reach} label="chances" />
+        <Score value={job.scores.ats_score} label="cv score*" estimated />
+        <Score value={job.scores.offer_probability} label="offer guess*" estimated />
+      </div>
+      <div className="rowacts">
+        <button
+          className={'btn sm' + (job.saved ? ' pri' : '')}
+          disabled={busy === job.id}
+          onClick={(e) => mark(e, job, job.saved ? 'reset' : 'shortlist')}
+        >
+          {job.saved ? 'Saved' : 'Save'}
+        </button>
+        <button
+          className="btn sm"
+          disabled={busy === job.id}
+          onClick={(e) => mark(e, job, 'hide')}
+        >
+          Not interested
+        </button>
+      </div>
+    </div>
+  )
+
   return (
     <div>
       <div className="shead">
@@ -289,6 +391,11 @@ export default function Jobs() {
         <label htmlFor="f-window">When</label>
         <select id="f-window" value={hours} onChange={(e) => set('hours', e.target.value)}>
           {WINDOWS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+
+        <label htmlFor="f-sort">Sort</label>
+        <select id="f-sort" value={sort} onChange={(e) => set('sort', e.target.value)}>
+          {SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
 
         <label htmlFor="f-source">Website</label>
@@ -405,6 +512,10 @@ export default function Jobs() {
             </Empty>
           )}
         </Panel>
+      ) : sort !== 'best' ? (
+        <div className="panel">
+          {data.jobs.map(renderJob)}
+        </div>
       ) : (
         data.bands.map((bandInfo) => {
           const rows = data.jobs.filter((j) => j.band === bandInfo.key)
@@ -417,94 +528,7 @@ export default function Jobs() {
                 <p>{bandInfo.blurb}</p>
               </div>
               <div className={'panel band-' + bandInfo.key}>
-                {rows.map((job) => (
-                  <div className={'jobwrap' + (job.saved ? ' saved' : '')} key={job.id}>
-                    {job.requirements && (
-                      <div
-                        className="preview"
-                        style={{ display: previewJob === job.id ? 'block' : 'none' }}
-                        onMouseEnter={() => openPreview(job.id)}
-                        onMouseLeave={scheduleClosePreview}
-                      >
-                        <b>{job.title}</b>
-                        {!job.requirements_found && (
-                          <em className="fallback-note">
-                            No separate requirements heading was found, showing the
-                            full posting instead.
-                          </em>
-                        )}
-                        {job.requirements}
-                      </div>
-                    )}
-                    <input
-                      type="checkbox"
-                      checked={selected.has(job.id)}
-                      onChange={() => toggleSelected(job.id)}
-                      disabled={!!rating}
-                      style={{ marginLeft: 16, flexShrink: 0 }}
-                      aria-label={'Select ' + job.title}
-                    />
-                    <Link className="job" to={'/jobs/' + job.id}>
-                      <div className="body">
-                        <div
-                          className="t"
-                          onMouseEnter={() => openPreview(job.id)}
-                          onMouseLeave={scheduleClosePreview}
-                        >
-                          {job.title}
-                          {job.websites && job.websites[0] && (
-                            <span className="pill p-slate" style={{ marginLeft: 8 }}>
-                              {job.websites[0]}
-                            </span>
-                          )}
-                        </div>
-                        <div className="c">
-                          {[job.company, [job.city, job.country].filter(Boolean).join(', '),
-                            ageLabel(job)].filter(Boolean).join(' · ')}
-                        </div>
-                        <div className="tags">
-                          {job.saved && <Pill tone="pine">saved</Pill>}
-                          {job.badges.map((b, i) => (
-                            <Pill key={i} tone={b.tone} strong={b.strong}>{b.text}</Pill>
-                          ))}
-                        </div>
-                      </div>
-                    </Link>
-                    {job.url && (
-                      <a
-                        className="btn sm"
-                        href={job.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Open posting
-                      </a>
-                    )}
-                    <div className="scores">
-                      <Score value={job.scores.fit} label="match" />
-                      <Score value={job.scores.reach} label="chances" />
-                      <Score value={job.scores.ats_score} label="cv score*" estimated />
-                      <Score value={job.scores.offer_probability} label="offer guess*" estimated />
-                    </div>
-                    <div className="rowacts">
-                      <button
-                        className={'btn sm' + (job.saved ? ' pri' : '')}
-                        disabled={busy === job.id}
-                        onClick={(e) => mark(e, job, job.saved ? 'reset' : 'shortlist')}
-                      >
-                        {job.saved ? 'Saved' : 'Save'}
-                      </button>
-                      <button
-                        className="btn sm"
-                        disabled={busy === job.id}
-                        onClick={(e) => mark(e, job, 'hide')}
-                      >
-                        Not interested
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                {rows.map(renderJob)}
               </div>
             </div>
           )

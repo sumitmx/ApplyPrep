@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -61,6 +62,41 @@ def adapters_for(cfg, companies, only=None):
     return out
 
 
+# Sources have nothing to do with each other, so a run should cost as long as
+# its slowest source rather than the sum of all of them. Only the fetching is
+# shared out: every database write stays on the caller's thread, because the
+# whole app runs on a single sqlite connection.
+FETCH_WORKERS = 6
+
+
+def fetch_all(adapters, countries, since_days, workers=FETCH_WORKERS):
+    """Ask every source at once. Network only - nothing here touches the database.
+
+    Hands back {name: (postings, error)} so one source failing costs only that
+    source. A source that raises reports its reason and the rest still land.
+    """
+    results = {}
+    if not adapters:
+        return results
+    pool = concurrent.futures.ThreadPoolExecutor(
+        max_workers=max(1, min(workers, len(adapters)))
+    )
+    try:
+        pending = {
+            pool.submit(adapter.fetch, settings, countries, since_days): name
+            for name, adapter, settings in adapters
+        }
+        for future in concurrent.futures.as_completed(pending):
+            name = pending[future]
+            try:
+                results[name] = (future.result(), None)
+            except Exception as exc:
+                results[name] = ([], str(exc))
+    finally:
+        pool.shutdown(wait=False)
+    return results
+
+
 def ingest(conn, cfg, prof, name, src_id, postings, slugs, master=None):
     added = 0
     failed = 0
@@ -104,14 +140,16 @@ def run(conn, cfg, countries=None, since_days=None, only=None):
     new_total = 0
     detail = {}
 
-    for name, adapter, settings in adapters_for(cfg, companies, only):
-        src_id = store.source_id(conn, name, adapter.kind)
-        try:
-            postings = adapter.fetch(settings, countries, since_days)
-        except Exception as exc:
-            detail[name] = "failed: " + str(exc)
+    adapters = adapters_for(cfg, companies, only)
+    fetched = fetch_all(adapters, countries, since_days)
+
+    for name, adapter, settings in adapters:
+        postings, error = fetched.get(name, ([], "was not fetched"))
+        if error is not None:
+            detail[name] = "failed: " + error
             continue
 
+        src_id = store.source_id(conn, name, adapter.kind)
         stored = store.save_raw(conn, run_id, src_id, postings)
         raw_total += stored
         added, failed, first_error = ingest(
@@ -133,7 +171,19 @@ def run(conn, cfg, countries=None, since_days=None, only=None):
             detail[name + "_unreachable"] = errors
 
     store.finish_run(conn, run_id, raw_total, new_total, detail)
-    return {"run_id": run_id, "raw": raw_total, "new": new_total, "detail": detail}
+    result = {"run_id": run_id, "raw": raw_total, "new": new_total, "detail": detail}
+
+    # Sweep out postings that have aged past the gate's freshness window, so the
+    # database and every list stay inside it without a manual prune. The window
+    # follows gate.max_age_days on purpose: those are exactly the jobs the gate
+    # would now reject as stale. prune() still protects shortlisted, applied and
+    # hand-pasted jobs. A null max_age_days means "no age limit", so nothing is
+    # swept; a non-positive one is ignored rather than emptying the database.
+    max_age = (cfg.get("gate") or {}).get("max_age_days")
+    if max_age is not None and max_age > 0:
+        result["pruned"] = prune(conn, days=max_age, apply=True)
+
+    return result
 
 
 def recompute_reach(conn, cfg):

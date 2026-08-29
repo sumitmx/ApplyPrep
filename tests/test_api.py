@@ -98,32 +98,35 @@ def test_search_ignores_too_short_a_term(client):
 def test_dashboard(client):
     body = client.get("/api/dashboard").json()
     values = [c["value"] for c in body["cards"]]
-    # job 1 has an application, so it's excluded from "New postings" and
-    # "Worth a look" too, same as the Jobs list default.
-    assert values == [2, 1, 1, 0, 1, 0]
+    # Job 1 has an application, so it drops out of "New postings" and "Worth a
+    # look" the same way the Jobs list default drops it. Job 3 never passed the
+    # gate, so it is not counted either - the card is what matched, not what the
+    # boards sent.
+    assert values == [1, 1, 1, 0, 1, 0]
     assert all(c["key"] and c["sub"] for c in body["cards"])
     assert body["gate_counts"]["passed"] == 2
     assert len(body["response_by_band"]) == 2
 
 
 def test_dashboard_matches_jobs_page_after_hiding(client):
+    """The card has to agree with the list it links to, before and after hiding."""
     before = client.get("/api/dashboard").json()
     values_before = {c["key"]: c["value"] for c in before["cards"]}
-    # job 1 has an application, so "New postings" excludes it too, same as the
-    # Jobs list default.
-    assert values_before["New postings"] == 2
+    # Job 1 has an application and job 3 never passed the gate, so only job 2
+    # is left - exactly what the Jobs list shows by default.
+    assert values_before["New postings"] == 1
     assert values_before["Not rated yet"] == 1
 
     client.post("/api/jobs/2/mark", json={"action": "hide"})
 
     after = client.get("/api/dashboard").json()
     values_after = {c["key"]: c["value"] for c in after["cards"]}
-    assert values_after["New postings"] == 1
+    assert values_after["New postings"] == 0
     assert values_after["Not rated yet"] == 0
 
     window = after["window_hours"]
-    everything = client.get("/api/jobs?gate=&hours=" + str(window)).json()
-    assert everything["total"] == values_after["New postings"]
+    matched = client.get("/api/jobs?gate=passed&hours=" + str(window)).json()
+    assert matched["total"] == values_after["New postings"]
 
     unrated = client.get(
         "/api/jobs?gate=passed&hours=" + str(window) + "&band=unrated"
@@ -633,3 +636,59 @@ def test_gmail_suggestions_lists_a_linked_and_classified_email(client):
 def test_dismissing_an_unknown_suggestion_is_a_404(client):
     resp = client.post("/api/gmail/suggestions/999/dismiss")
     assert resp.status_code == 404
+
+
+def test_agent_failure_carries_repair_steps(client, monkeypatch):
+    """A signed-out CLI must arrive as something the UI can build a dialog from."""
+    from jobagent import agent
+
+    def signed_out(exe, prompt, timeout, model=None):
+        raise agent.AgentError("Claude exited with code 1. Not logged in - Please run /login")
+
+    monkeypatch.setattr(agent.shutil, "which", lambda cmd: "/usr/bin/" + cmd)
+    monkeypatch.setitem(agent._RUNNERS, "claude", signed_out)
+
+    res = client.post("/api/jobs/1/ask", json={"question": "is this remote?"})
+    assert res.status_code == 401
+    detail = res.json()["detail"]
+    assert detail["kind"] == "auth"
+    assert detail["steps"]
+    assert "Not logged in" in detail["reason"]
+
+
+def test_agent_check_reports_a_signed_out_cli_without_raising(client, monkeypatch):
+    from jobagent import agent
+
+    def signed_out(exe, prompt, timeout, model=None):
+        raise agent.AgentError("Claude exited with code 1. Not logged in")
+
+    monkeypatch.setattr(agent.shutil, "which", lambda cmd: "/usr/bin/" + cmd)
+    monkeypatch.setitem(agent._RUNNERS, "claude", signed_out)
+
+    body = client.get("/api/agent/check").json()
+    assert body["ok"] is False
+    assert body["kind"] == "auth"
+    assert body["steps"]
+
+
+def test_agent_check_reports_success(client, monkeypatch):
+    from jobagent import agent
+
+    monkeypatch.setattr(agent.shutil, "which", lambda cmd: "/usr/bin/" + cmd)
+    monkeypatch.setitem(agent._RUNNERS, "claude", lambda *a, **k: "ok")
+
+    body = client.get("/api/agent/check").json()
+    assert body["ok"] is True
+
+
+def test_new_postings_counts_only_what_passed_the_gate(client):
+    """The boards send thousands; the card must show what survived, not the pile."""
+    body = client.get("/api/dashboard").json()
+    card = next(c for c in body["cards"] if c["key"] == "New postings")
+    window = body["window_hours"]
+
+    matched = client.get("/api/jobs?gate=passed&hours=" + str(window)).json()
+    everything = client.get("/api/jobs?gate=&hours=" + str(window)).json()
+
+    assert card["value"] == matched["total"]
+    assert everything["total"] > matched["total"]

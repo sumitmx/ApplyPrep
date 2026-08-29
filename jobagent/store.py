@@ -16,6 +16,14 @@ def connect(db_path):
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # A pull inserts thousands of rows and commits after each one, and the
+    # default journal makes every one of those commits wait for the disk - it
+    # was costing a run about a minute of pure waiting. WAL plus NORMAL keeps
+    # the durability that matters for a local, single-user database (a crash
+    # can cost the last transaction, never the file) and makes those commits
+    # roughly free.
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 

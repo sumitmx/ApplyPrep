@@ -7,7 +7,7 @@ countries:
   - DE
   - NL
 
-since_days: 14
+since_days: 7
 
 reach:
   blue_card_eur: 48300
@@ -33,7 +33,11 @@ gate:
   min_salary_eur: null
   require_english_only: false
   allow_contract: true
-  max_age_days: 45
+  max_age_days: 7
+  # Reject a posting whose stated experience requirement is below this.
+  # Read from the description, not the title, and only ever acted on when
+  # the posting states a number - silence is never treated as junior.
+  min_years_experience: 5
   title_must_match:
     - architect
     - architekt
@@ -79,13 +83,23 @@ gate:
     - intern
     - internship
     - graduate
+    - new grad
     - working student
     - werkstudent
+    - student
     - praktikum
     - praktikant
     - ausbildung
+    - azubi
+    - duales studium
     - trainee
     - junior
+    - jr
+    - entry level
+    - einsteiger
+    - berufseinsteiger
+    - absolvent
+    - apprentice
     - sales
     - account executive
     - business development
@@ -129,16 +143,17 @@ sources:
   greenhouse:
     enabled: true
     region_filter: true
-    pause_seconds: 0.4
   lever:
     enabled: true
     region_filter: true
-    pause_seconds: 0.4
+    # Lever's API is by far the slowest board - single companies have taken
+    # over three minutes to answer. Its companies are fetched together and the
+    # whole source is capped, so the slow ones cost the run nothing; whatever
+    # misses the cut is reported and picked up on the next pull.
+    deadline_seconds: 40
   ashby:
     enabled: true
     region_filter: true
-    pause_seconds: 0.4
   workable:
     enabled: true
     region_filter: true
-    pause_seconds: 1.0
