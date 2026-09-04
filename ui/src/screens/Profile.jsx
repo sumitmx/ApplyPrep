@@ -14,10 +14,54 @@ function formatDate(stamp) {
   return stamp ? stamp.replace('T', ' ').slice(0, 16) : ''
 }
 
+// What the import did to master.yaml. Shown after every upload, because the
+// CV rewrites the profile silently otherwise and a misread PDF would only
+// surface later, in a bad CV.
+function ImportReport({ report }) {
+  if (!report) return null
+  if (!report.applied) {
+    return (
+      <div className="err" style={{ marginTop: 10 }}>
+        Your CV was saved, but the profile could not be rebuilt from it:{' '}
+        {typeof report.reason === 'string' ? report.reason : report.reason?.message}
+      </div>
+    )
+  }
+  const lines = [
+    report.roles + ' roles, ' + report.bullets + ' bullets',
+    report.bullet_ids_kept ? report.bullet_ids_kept + ' kept their id' : null,
+    report.bullets_not_in_cv
+      ? report.bullets_not_in_cv + ' dropped as not found in the CV'
+      : null,
+  ].filter(Boolean)
+
+  return (
+    <div className="ok" style={{ marginTop: 10 }}>
+      <b>Profile rebuilt from your CV.</b> {lines.join(' · ')}.
+      {report.skills_added?.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          <b>Skills added:</b> {report.skills_added.join(', ')}
+        </div>
+      )}
+      {report.skills_removed?.length > 0 && (
+        <div style={{ marginTop: 4 }}>
+          <b>No longer in your CV, so removed:</b> {report.skills_removed.join(', ')}
+        </div>
+      )}
+      {report.backup && (
+        <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
+          Previous profile saved as {report.backup}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function UploadRow({ upload, onChanged }) {
   const inputRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [report, setReport] = useState(null)
 
   const pick = () => inputRef.current && inputRef.current.click()
 
@@ -27,8 +71,10 @@ function UploadRow({ upload, onChanged }) {
     if (!file) return
     setBusy(true)
     setError(null)
+    setReport(null)
     try {
-      await api.uploadMasterCv('cv', file)
+      const meta = await api.uploadMasterCv('cv', file)
+      setReport(meta.import || null)
       onChanged()
     } catch (err) {
       setError(err)
@@ -50,6 +96,7 @@ function UploadRow({ upload, onChanged }) {
   }
 
   return (
+    <>
     <div className="check">
       <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <span>Master CV, from your own file</span>
@@ -67,7 +114,7 @@ function UploadRow({ upload, onChanged }) {
           </a>
         )}
         <button className="btn sm" disabled={busy} onClick={pick}>
-          Upload
+          {busy ? 'Reading your CV...' : 'Upload'}
         </button>
         {upload && (
           <button className="btn sm" disabled={busy} onClick={discard}>
@@ -83,6 +130,8 @@ function UploadRow({ upload, onChanged }) {
         />
       </span>
     </div>
+    <ImportReport report={report} />
+    </>
   )
 }
 

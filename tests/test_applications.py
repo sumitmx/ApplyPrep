@@ -77,16 +77,14 @@ def test_accepting_a_letter_does_not_duplicate_an_existing_application(conn, tmp
     assert rows[0]["status"] == "applied"
 
 
-def test_all_documents_lists_only_accepted_ones(conn, tmp_path):
+def test_nothing_is_listed_once_a_document_has_been_saved(conn, tmp_path):
+    """Saving hands the file over and forgets it, so there is nothing to list."""
     store.save_document(conn, 1, "cv", payload=CV_PAYLOAD)
     store.save_document(conn, 1, "letter", body="Dear hiring manager,")
     service.accept_document(conn, 1, "cv", MASTER, str(tmp_path / "docs"))
 
-    docs = service.all_documents(conn)
-    assert len(docs) == 1
-    assert docs[0]["kind"] == "cv"
-    assert docs[0]["company"] == "Acme"
-    assert docs[0]["has_file"] is True
+    assert service.all_documents(conn) == []
+    assert service.stored_document(conn, 1, "cv") is None
 
 
 def test_all_documents_empty_when_nothing_accepted(conn):

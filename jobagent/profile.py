@@ -1,4 +1,6 @@
 import re
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -36,6 +38,51 @@ def _load(path):
 
 def load_master(path="master.yaml"):
     return _load(path)
+
+
+def backup_master(path):
+    """Copy master.yaml aside before it is replaced.
+
+    A CV import rewrites the whole file, so there has to be a way back if the
+    extraction misread something. Named the same way the database backups are,
+    so they are obvious sitting next to each other in the folder.
+    """
+    file = Path(path)
+    if not file.exists():
+        return None
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = file.with_name(file.name + ".pre-cv-import-" + stamp + ".bak")
+    shutil.copy2(file, target)
+    return target
+
+
+def write_master(path, data):
+    """Replace master.yaml wholesale, keeping a backup of what was there.
+
+    append_skills() edits one section in place and preserves the file's
+    comments. This cannot: a CV import replaces the content entirely, so the
+    header comment is written back explicitly rather than lost.
+    """
+    file = Path(path)
+    backup = backup_master(path)
+    with file.open("w", encoding="utf-8") as handle:
+        handle.write(MASTER_HEADER)
+        _round_trip.dump(data, handle)
+    return backup
+
+
+MASTER_HEADER = """# ---------------------------------------------------------------------------
+# master.yaml - generated from the CV uploaded on the Profile screen.
+#
+# Edits made here are overwritten by the next CV upload. Change your CV and
+# upload it again rather than editing this file by hand.
+#
+# Every bullet keeps a stable id. The tailor may only keep, reword, drop or
+# pull bullets that exist here - it cannot invent new ones, and that guarantee
+# is enforced in jobagent/documents/guard.py.
+# ---------------------------------------------------------------------------
+
+"""
 
 
 def append_skills(path, additions):

@@ -10,7 +10,7 @@ from . import dedup as dedup_module
 from . import documents as documents_module
 from . import gmail_match, gmail_sync, profile, rating, skills as skills_module, store
 from .gmail import auth as gmail_auth
-from .documents import palette, pdf, render, tailor
+from .documents import import_cv, palette, pdf, render, tailor
 from .documents.guard import known_bullets
 
 MARK_ACTIONS = {
@@ -1034,7 +1034,7 @@ def accept_document(conn, job_id, kind, master, documents_dir="documents",
     ).fetchone()
     identity = (master or {}).get("identity") or {}
     company_name = job["company_name"] if job else "job"
-    default_dir = render.folder(documents_dir, job_id, company_name)
+    default_dir = render.suggested_dir()
 
     name_slug = re.sub(r"[^A-Za-z0-9]+", "_", identity.get("name") or "CV").strip("_")
     company_slug = re.sub(r"[^A-Za-z0-9]+", "_", company_name or "").strip("_")
@@ -1056,9 +1056,14 @@ def accept_document(conn, job_id, kind, master, documents_dir="documents",
         path = render.cv_docx(content, chosen, accent=accent)
     else:
         path = render.letter_docx(row.get("body") or "", identity, chosen)
+    # The file has been written to wherever the candidate chose, so the app has
+    # no further use for the draft - and keeping it would mean keeping a copy of
+    # a CV that has already gone out. The row is dropped rather than marked
+    # accepted; the application record below is what remembers that this job was
+    # applied to, and it is also what protects the job from being pruned.
+    conn.execute("DELETE FROM document WHERE id = ?", (row["id"],))
     conn.execute(
-        "UPDATE document SET accepted = 1, path = ? WHERE id = ?",
-        (str(path), row["id"]),
+        "DELETE FROM document WHERE job_id = ? AND kind = 'review'", (job_id,)
     )
     conn.commit()
     application = store.start_application(conn, job_id)
@@ -1269,6 +1274,43 @@ def save_master_upload(documents_dir, kind, filename, content):
     meta["kind"] = kind
     meta["has_file"] = True
     return meta
+
+
+def import_master_from_cv(conn, documents_dir, master_path,
+                          timeout=import_cv.IMPORT_TIMEOUT):
+    """Rebuild master.yaml from the CV that was just uploaded.
+
+    The upload is the source of truth: whatever the CV no longer says is gone
+    from the profile afterwards, skills included. Everything downstream -
+    tailoring, ATS coverage, the skills panel, job rating - already reads
+    master.yaml, so this one write updates all of them.
+
+    Returns the change summary, or {"applied": False, ...} when the extraction
+    produced something too thin to be worth writing. Never leaves a half-written
+    file: validation happens before the replace, and the old file is backed up.
+    """
+    folder = _master_upload_dir(documents_dir)
+    text_path = folder / "cv.txt"
+    if not text_path.exists():
+        return {"applied": False, "reason": "No readable text was found in the upload."}
+    cv_text = text_path.read_text(encoding="utf-8", errors="replace")
+
+    extracted = import_cv.extract(
+        cv_text, timeout=timeout or import_cv.IMPORT_TIMEOUT,
+        provider=get_ai_provider(conn),
+    )
+
+    previous = profile.load_master(master_path) or {}
+    built, summary = import_cv.build(extracted, previous, cv_text)
+
+    problems = import_cv.validate(built)
+    if problems:
+        return {"applied": False, "reason": "; ".join(problems)}
+
+    backup = profile.write_master(master_path, built)
+    summary["applied"] = True
+    summary["backup"] = backup.name if backup else None
+    return summary
 
 
 def master_upload_info(documents_dir, kind):

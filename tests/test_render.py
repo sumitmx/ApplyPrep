@@ -85,26 +85,42 @@ def test_letter_docx_has_greeting_and_sign_off(tmp_path):
     assert "Second para." in body
 
 
-def test_folder_name_is_slugged():
-    path = render.folder("documents", 47, "Zalando SE")
-    assert path.name == "047-zalando-se"
+def test_save_dialog_opens_outside_the_project():
+    """A tailored CV is not kept, so it must not default into a project folder."""
+    suggested = render.suggested_dir()
+    assert suggested.is_dir()
+    assert Path("documents").resolve() not in suggested.resolve().parents
+    assert suggested.resolve() != Path("documents").resolve()
 
 
-def test_save_writes_a_file_and_discard_removes_it(conn, tmp_path):
+def test_saving_writes_the_file_and_keeps_no_copy(conn, tmp_path):
+    """The whole point: once the CV has gone out, the app keeps nothing."""
     store.save_document(conn, 1, "cv",
                         payload={"structured": tailor.build_cv_content(_draft(), MASTER)})
     assert service.stored_document(conn, 1, "cv")["has_file"] is False
 
     result = service.accept_document(conn, 1, "cv", MASTER, str(tmp_path / "docs"))
     assert result["accepted"] is True
+
     written = Path(result["path"])
-    assert written.exists()
+    assert written.exists(), "the file the candidate asked for must still be written"
+    assert service.stored_document(conn, 1, "cv") is None, "no draft may survive the save"
 
-    row = service.stored_document(conn, 1, "cv")
-    assert row["accepted"] == 1 and row["has_file"] is True
 
+def test_saving_still_records_that_the_job_was_applied_to(conn, tmp_path):
+    """Dropping the draft must not lose the fact that you applied."""
+    store.save_document(conn, 1, "cv",
+                        payload={"structured": tailor.build_cv_content(_draft(), MASTER)})
+    service.accept_document(conn, 1, "cv", MASTER, str(tmp_path / "docs"))
+
+    row = conn.execute("SELECT status FROM application WHERE job_id = 1").fetchone()
+    assert row is not None
+
+
+def test_discard_removes_an_unsaved_draft(conn):
+    store.save_document(conn, 1, "cv",
+                        payload={"structured": tailor.build_cv_content(_draft(), MASTER)})
     service.discard_document(conn, 1, "cv")
-    assert written.exists() is False
     assert service.stored_document(conn, 1, "cv") is None
 
 

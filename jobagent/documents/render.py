@@ -44,10 +44,15 @@ def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")[:40] or "job"
 
 
-def folder(base, job_id, company):
-    path = Path(base) / (str(job_id).rjust(3, "0") + "-" + slug(company))
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+def suggested_dir():
+    """Where the save dialog should open.
+
+    Deliberately outside the project. A tailored CV is written for one
+    application and is not kept afterwards, so it belongs wherever the
+    candidate keeps their own files - not in a folder the app manages.
+    """
+    downloads = Path.home() / "Downloads"
+    return downloads if downloads.is_dir() else Path.home()
 
 
 def ask_save_path(default_dir, default_filename):

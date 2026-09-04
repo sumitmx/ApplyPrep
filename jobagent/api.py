@@ -443,12 +443,30 @@ def create_app(cfg=None):
         content = await file.read()
         if not content:
             raise HTTPException(status_code=400, detail="the file was empty")
+        docs_dir = cfg.get("documents_dir", "documents")
         try:
-            return service.save_master_upload(
-                cfg.get("documents_dir", "documents"), kind, file.filename, content
-            )
+            meta = service.save_master_upload(docs_dir, kind, file.filename, content)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+        # The upload is the source of truth, so master.yaml is rebuilt from it
+        # straight away. The file itself is already saved by this point: an
+        # extraction that fails must not lose the upload, so the error is
+        # reported alongside the successful upload rather than raised over it.
+        conn = db()
+        try:
+            meta["import"] = service.import_master_from_cv(
+                conn, docs_dir, cfg.get("master_path", "master.yaml")
+            )
+        except agent.AgentError as exc:
+            detail = exc.payload if isinstance(exc, agent.AgentSetupError) else str(exc)
+            meta["import"] = {"applied": False, "reason": detail}
+        except Exception as exc:
+            meta["import"] = {"applied": False,
+                              "reason": type(exc).__name__ + ": " + str(exc)[:200]}
+        finally:
+            conn.close()
+        return meta
 
     @app.get("/api/master-cv/{kind}/download")
     def get_master_download(kind: str):
