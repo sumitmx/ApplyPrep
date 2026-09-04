@@ -5,6 +5,23 @@ ATS boards into one SQLite file. Scoring and document tailoring happen in
 Claude chat over MCP, so this codebase makes zero model calls and needs no
 API key.
 
+## Product tour
+
+ApplyPrep is a local-first workspace for finding relevant roles, keeping fit
+and reachability separate, tailoring documents, and tracking applications.
+
+| Dashboard | Job discovery |
+| --- | --- |
+| ![Dashboard with job funnel, score bands and application pipeline](docs/screenshots/dashboard.png) | ![Filterable job discovery list with fit, reach and sponsorship signals](docs/screenshots/jobs.png) |
+
+| Job evaluation | Application tracking |
+| --- | --- |
+| ![Job detail showing separate fit and reach explanations](docs/screenshots/job-detail.png) | ![Application funnel, response summary and tracked applications](docs/screenshots/applications.png) |
+
+| Profile insights |
+| --- |
+| ![Profile skills balance, demand and freshness insights](docs/screenshots/profile.png) |
+
 ## Setup
 
     python -m venv .venv
