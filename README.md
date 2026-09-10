@@ -5,6 +5,34 @@ ATS boards into one SQLite file. Scoring and document tailoring happen in
 Claude chat over MCP, so this codebase makes zero model calls and needs no
 API key.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Ingest["Ingest"]
+        Sources["Aggregators + ATS boards\n(Arbeitnow, Remotive, Greenhouse, Lever, ...)"]
+        Pull["pull.py\nnormalize -> gate -> dedup"]
+        Sources --> Pull
+    end
+
+    Pull --> DB[("jobs.db\nSQLite")]
+
+    subgraph Doors["Two front doors, one brain"]
+        UI["React UI"] --> API["FastAPI\n(localhost only)"]
+        Chat["Claude Desktop chat"] --> MCP["MCP server\n(stdio)"]
+        API --> Core["jobagent/\nshared service layer"]
+        MCP --> Core
+    end
+
+    Core <--> DB
+    Chat -. "fit score + CV tailoring\n(the only model calls)" .-> MCP
+```
+
+Jobs get pulled and scored for **reach** (is it landable) entirely in Python.
+**Fit** (is it a good match) is the one judgement call, made by Claude in
+chat and written back over MCP - everything else in the diagram runs
+locally with no API key.
+
 ## Product tour
 
 ApplyPrep is a local-first workspace for finding relevant roles, keeping fit
